@@ -1,0 +1,104 @@
+{
+  "updatedAt": "2026-10-04T03:45:50.707Z",
+  "source": "本机 Codex 会话记录 · 按北京时间汇总",
+  "days": [
+    {
+      "date": "2026-06-02",
+      "tokens": 131304,
+      "inputTokens": 128937,
+      "cachedInputTokens": 78208,
+      "outputTokens": 2367
+    },
+    {
+      "date": "2026-06-14",
+      "tokens": 781044,
+      "inputTokens": 774261,
+      "cachedInputTokens": 601216,
+      "outputTokens": 6783
+    },
+    {
+      "date": "2026-08-19",
+      "tokens": 3893173,
+      "inputTokens": 3873432,
+      "cachedInputTokens": 3544904,
+      "outputTokens": 19741
+    },
+    {
+      "date": "2026-08-20",
+      "tokens": 54007551,
+      "inputTokens": 53835363,
+      "cachedInputTokens": 51353339,
+      "outputTokens": 172188
+    },
+    {
+      "date": "2026-08-22",
+      "tokens": 42979711,
+      "inputTokens": 42824897,
+      "cachedInputTokens": 41986468,
+      "outputTokens": 154814
+    },
+    {
+      "date": "2026-08-23",
+      "tokens": 3144279,
+      "inputTokens": 3126200,
+      "cachedInputTokens": 2846200,
+      "outputTokens": 18079
+    },
+    {
+      "date": "2026-09-27",
+      "tokens": 84208400,
+      "inputTokens": 83616582,
+      "cachedInputTokens": 81023744,
+      "outputTokens": 576564
+    },
+    {
+      "date": "2026-09-28",
+      "tokens": 164469779,
+      "inputTokens": 163532315,
+      "cachedInputTokens": 158444800,
+      "outputTokens": 930873
+    },
+    {
+      "date": "2026-09-29",
+      "tokens": 117926430,
+      "inputTokens": 117176238,
+      "cachedInputTokens": 113045364,
+      "outputTokens": 748143
+    },
+    {
+      "date": "2026-09-30",
+      "tokens": 106066280,
+      "inputTokens": 105461769,
+      "cachedInputTokens": 100951808,
+      "outputTokens": 585309
+    },
+    {
+      "date": "2026-10-01",
+      "tokens": 68929592,
+      "inputTokens": 68455457,
+      "cachedInputTokens": 65427328,
+      "outputTokens": 455853
+    },
+    {
+      "date": "2026-10-02",
+      "tokens": 105306060,
+      "inputTokens": 104661706,
+      "cachedInputTokens": 100933504,
+      "outputTokens": 632679
+    },
+    {
+      "date": "2026-10-03",
+      "tokens": 389063528,
+      "inputTokens": 387190237,
+      "cachedInputTokens": 376548992,
+      "outputTokens": 1850411
+    },
+    {
+      "date": "2026-10-04",
+      "tokens": 24449135,
+      "inputTokens": 24207084,
+      "cachedInputTokens": 22495104,
+      "outputTokens": 242051
+    }
+  ]
+}
