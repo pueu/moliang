@@ -9,7 +9,6 @@ import SearchBar from '../components/SearchBar';
 import { siteConfig, publicPath } from '../siteConfig';
 import PixelTitle from '../components/PixelTitle';
 import CodexUsage from '../components/CodexUsage';
-import usageData from '../data/codex-usage.json';
 import ContactCard from '../components/ContactCard';
 import ThemeToggleBlock from '../components/ThemeToggleBlock';
 import ProfileCard from '../components/ProfileCard';
@@ -99,7 +98,6 @@ export default function Home() {
         <PageTransition>
           {/* 🌟 调整整体容器的内边距，适应手机端更小的屏幕 */}
           <div className="w-full max-w-6xl mx-auto mt-24 sm:mt-28 px-4 sm:px-6 lg:px-10 relative z-10">
-            <PixelTitle />
             <SearchBar posts={allPosts} />
 
             <main className="flex flex-col gap-6 w-full mt-6" id="main">
@@ -154,7 +152,8 @@ export default function Home() {
                 </div>
               </div>
 
-              <CodexUsage data={usageData} />
+              <CodexUsage />
+              <PixelTitle />
 
               {/* 底部数据面板 */}
               <div className="w-full mt-4"><SiteDashboard/></div>

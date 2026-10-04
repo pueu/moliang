@@ -5,11 +5,12 @@ import type { KeyboardEvent } from 'react';
 import { createSnake, stepSnake, turnSnake } from './snakeEngine';
 import type { Direction } from './snakeEngine';
 import { siteConfig } from '../siteConfig';
+import { normalizeUsageResponse } from './usageAdapter';
 
 export interface UsageSnapshot {
   updatedAt: string;
   source: string;
-  days: { date: string; tokens: number; inputTokens: number; cachedInputTokens: number; outputTokens: number }[];
+  days: { date: string; tokens: number }[];
 }
 
 type Day = UsageSnapshot['days'][number];
@@ -20,22 +21,6 @@ const number = (value: number) => new Intl.NumberFormat('zh-CN').format(value);
 const compact = (value: number) => value >= 100_000_000 ? `${(value / 100_000_000).toFixed(2)} 亿` : value >= 10_000 ? `${(value / 10_000).toFixed(1)} 万` : number(value);
 const isoDate = (time: number) => new Date(time).toISOString().slice(0, 10);
 const dayTime = (date: string) => Date.parse(`${date}T00:00:00Z`);
-
-/** Accept only public aggregate counters, never arbitrary API fields. */
-export function validateUsageSnapshot(value: unknown): UsageSnapshot {
-  if (!value || typeof value !== 'object') throw new Error('接口返回格式不正确');
-  const root = value as Record<string, unknown>;
-  if (typeof root.updatedAt !== 'string' || !Number.isFinite(Date.parse(root.updatedAt)) || typeof root.source !== 'string' || !Array.isArray(root.days)) throw new Error('接口缺少有效的更新时间或用量记录');
-  const fields = ['tokens', 'inputTokens', 'cachedInputTokens', 'outputTokens'] as const;
-  const days = root.days.map((value: unknown) => {
-    if (!value || typeof value !== 'object') throw new Error('接口包含无效的日记录');
-    const day = value as Record<string, unknown>;
-    if (typeof day.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day.date) || !Number.isFinite(dayTime(day.date)) || isoDate(dayTime(day.date)) !== day.date) throw new Error('接口包含无效日期');
-    for (const field of fields) if (typeof day[field] !== 'number' || !Number.isFinite(day[field]) || (day[field] as number) < 0) throw new Error('接口包含无效的 Token 数量');
-    return { date: day.date, tokens: day.tokens as number, inputTokens: day.inputTokens as number, cachedInputTokens: day.cachedInputTokens as number, outputTokens: day.outputTokens as number };
-  });
-  return { updatedAt: root.updatedAt, source: root.source, days };
-}
 
 function publicApiUrl(value: string): string {
   const url = new URL(value);
@@ -53,7 +38,8 @@ function snapshotDate(value: string): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
-function buildUsage(data: UsageSnapshot) {
+function buildUsage(data: UsageSnapshot | null) {
+  if (!data) return { today: '', map: new Map<string, Day>(), weeks: Array.from({ length: 53 }, () => ({ dates: [] as string[], tokens: 0, count: 0 })), totals: new Map<string, number>(), total: 0 };
   const today = snapshotDate(data.updatedAt);
   const end = dayTime(today);
   const weekStart = end - new Date(end).getUTCDay() * DAY_MS;
@@ -66,9 +52,6 @@ function buildUsage(data: UsageSnapshot) {
     map.set(day.date, {
       date: day.date,
       tokens: (previous?.tokens || 0) + safe(day.tokens),
-      inputTokens: (previous?.inputTokens || 0) + safe(day.inputTokens),
-      cachedInputTokens: (previous?.cachedInputTokens || 0) + safe(day.cachedInputTokens),
-      outputTokens: (previous?.outputTokens || 0) + safe(day.outputTokens),
     });
   }
   const weeks = Array.from({ length: 53 }, (_, week) => {
@@ -85,12 +68,15 @@ function buildUsage(data: UsageSnapshot) {
   return { today, map, weeks, totals, total: [...map.values()].reduce((sum, day) => sum + day.tokens, 0) };
 }
 
-export default function CodexUsage({ data, apiUrl }: { data: UsageSnapshot; apiUrl?: string }) {
-  const endpoint = (apiUrl ?? process.env.NEXT_PUBLIC_CODEX_USAGE_API_URL ?? siteConfig.usageApiUrl ?? '').trim();
+export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
+  const endpoint = (apiUrl ?? (process.env.NEXT_PUBLIC_CODEX_USAGE_API_URL?.trim() || siteConfig.usageApiUrl || '')).trim();
   const [refresh, setRefresh] = useState(0);
   const [request, setRequest] = useState<{ endpoint: string; snapshot: UsageSnapshot | null; loading: boolean; error: string | null }>({ endpoint, snapshot: null, loading: !!endpoint, error: null });
   const activeRequest = request.endpoint === endpoint ? request : null;
-  const snapshot = activeRequest?.snapshot ?? data;
+  // Only successfully fetched API records live in memory; no local fallback.
+  const snapshot = activeRequest?.snapshot ?? null;
+  const loading = !!endpoint && (!activeRequest || activeRequest.loading);
+  const requestLabel = !endpoint ? '用量数据待接入' : loading ? '正在读取用量接口' : activeRequest?.error ? `${activeRequest.error}${snapshot ? ' · 保留上次成功获取的接口记录' : ''}` : snapshot ? '用量接口 · 每 5 分钟更新' : '尚未获取用量记录';
   const usage = useMemo(() => buildUsage(snapshot), [snapshot]);
   const [mode, setMode] = useState<Mode>('daily');
   const [selected, setSelected] = useState<string | null>(null);
@@ -126,7 +112,7 @@ export default function CodexUsage({ data, apiUrl }: { data: UsageSnapshot; apiU
       try {
         const response = await fetch(publicApiUrl(endpoint), { signal: controller.signal, credentials: 'omit', mode: 'cors', cache: 'no-store', headers: { Accept: 'application/json' } });
         if (!response.ok) throw new Error(`接口响应 HTTP ${response.status}`);
-        const next = validateUsageSnapshot(await response.json());
+        const next = normalizeUsageResponse(await response.json());
         if (!cancelled) setRequest({ endpoint, snapshot: next, loading: false, error: null });
       } catch (error) {
         if (!cancelled) setRequest(previous => ({ endpoint, snapshot: previous.endpoint === endpoint ? previous.snapshot : null, loading: false, error: timedOut ? '接口请求超时' : error instanceof TypeError ? '接口暂不可用，请检查网络与 CORS 配置' : error instanceof Error ? error.message : '接口暂不可用' }));
@@ -200,11 +186,15 @@ export default function CodexUsage({ data, apiUrl }: { data: UsageSnapshot; apiU
 
       <div className="min-w-0 rounded-2xl border border-white/10 bg-[#090f19] p-4 text-slate-200 sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-3 text-[10px] text-slate-500">
-          <div role="status" aria-live="polite"><span className={activeRequest?.error ? 'text-amber-300' : activeRequest?.snapshot ? 'text-cyan-300' : 'text-slate-400'}>{activeRequest?.loading ? '正在读取外部接口' : activeRequest?.error ? `${activeRequest.error} · ${activeRequest.snapshot ? '保留上次接口记录' : '使用本机记录快照'}` : activeRequest?.snapshot ? '外部接口 · 每 5 分钟更新' : '本机记录快照'}</span><span className="ml-2">更新时间 {snapshotDate(snapshot.updatedAt)} {snapshot.updatedAt.includes('T') ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(snapshot.updatedAt)) : ''}（上海时间）</span></div>
-          {!!endpoint && <button className="rounded px-2 py-1 text-cyan-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-cyan-300 disabled:opacity-40" disabled={activeRequest?.loading} onClick={() => setRefresh(value => value + 1)}>刷新用量</button>}
+          <div role="status" aria-live="polite"><span className={activeRequest?.error ? 'text-amber-300' : snapshot ? 'text-cyan-300' : 'text-slate-400'}>{requestLabel}</span>{snapshot && <span className="ml-2">更新时间 {snapshotDate(snapshot.updatedAt)} {snapshot.updatedAt.includes('T') ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(snapshot.updatedAt)) : ''}（上海时间）</span>}</div>
+          {!!endpoint && <button className="rounded px-2 py-1 text-cyan-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-cyan-300 disabled:opacity-40" disabled={loading} onClick={() => setRefresh(value => value + 1)}>刷新用量</button>}
           <p className="w-full text-slate-600">统计已记录的 Token 活动，不表示账户剩余额度。</p>
         </div>
-        {!game ? <>
+        {!game ? !snapshot ? <div className="flex min-h-[210px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.015] px-5 py-8 text-center" data-usage-state={!endpoint ? 'unconfigured' : loading ? 'loading' : activeRequest?.error ? 'error' : 'empty'}>
+          <p className="text-sm font-medium text-slate-300">{!endpoint ? '用量数据待接入' : loading ? '正在读取真实用量…' : activeRequest?.error ? '暂时无法读取用量' : '暂无用量记录'}</p>
+          <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">{!endpoint ? '接入后，这里将显示每天、每周和累计 Token 活动。' : loading ? '记录加载完成后会自动显示活动网格。' : '接口暂未提供可用记录；可以刷新重试。'}</p>
+          <button onClick={openGame} className="mt-5 rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-medium text-cyan-300 transition hover:bg-cyan-400/20 focus-visible:outline-2 focus-visible:outline-cyan-300">先玩一局贪吃蛇</button>
+        </div> : <>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
             <div><span className="text-[11px] text-slate-400">{metricsLabel}</span><p className="mt-1 text-2xl font-semibold tracking-tight text-white">{displayed === undefined ? '未记录' : compact(displayed)}{displayed !== undefined && <span className="ml-2 text-xs font-normal text-slate-500">tokens</span>}</p></div>
             <div className="flex rounded-lg border border-white/10 bg-white/[0.03] p-1" role="tablist" aria-label="Codex 用量统计周期">
@@ -248,7 +238,7 @@ export default function CodexUsage({ data, apiUrl }: { data: UsageSnapshot; apiU
 
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500"><span>{mode === 'daily' ? '每格一天 · 总 tokens（含缓存输入）' : mode === 'weekly' ? '每列一周 · 全列显示该周已记录合计' : '每格显示截至该日的已记录累计用量'}</span><div className="flex items-center gap-1.5"><span>少</span>{colors.map(color => <span key={color} className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />)}<span>多</span><span className="ml-2 h-2.5 w-2.5 rounded-[2px] border border-slate-700 bg-[#111b27]" /><span>未记录</span></div></div>
             <div role="status" aria-live="polite" className="mt-4 min-h-[66px] rounded-xl border border-white/5 bg-white/[0.025] px-3 py-2 text-[11px] leading-relaxed text-slate-400">
-              {selected ? <><strong className="font-medium text-slate-200">{selected}</strong>{mode === 'weekly' && selectedWeek && <span> · {selectedWeek.dates[0]} 至 {selectedWeek.dates[6] > usage.today ? usage.today : selectedWeek.dates[6]}：{selectedWeek.count ? `${number(selectedWeek.tokens)} tokens（已记录 ${selectedWeek.count} 天）` : '未记录'}</span>}{mode === 'total' && <span> · 截至当日累计 {number(usage.totals.get(selected) || 0)} tokens</span>}<br />{selectedDay ? <span>当天 {number(selectedDay.tokens)} tokens（含缓存输入）</span> : <span>当天未记录 · 缺失记录不代表用量为零</span>}</> : <><span>鼠标悬停或键盘聚焦查看当天记录。</span><br /><span>更新至 {usage.today}（上海时间） · {activeRequest?.snapshot ? '外部接口记录' : '本机记录快照'}</span></>}
+              {selected ? <><strong className="font-medium text-slate-200">{selected}</strong>{mode === 'weekly' && selectedWeek && <span> · {selectedWeek.dates[0]} 至 {selectedWeek.dates[6] > usage.today ? usage.today : selectedWeek.dates[6]}：{selectedWeek.count ? `${number(selectedWeek.tokens)} tokens（已记录 ${selectedWeek.count} 天）` : '未记录'}</span>}{mode === 'total' && <span> · 截至当日累计 {number(usage.totals.get(selected) || 0)} tokens</span>}<br />{selectedDay ? <span>当天 {number(selectedDay.tokens)} tokens（含缓存输入）</span> : <span>当天未记录 · 缺失记录不代表用量为零</span>}</> : <><span>鼠标悬停或键盘聚焦查看当天记录。</span><br /><span>更新至 {usage.today}（上海时间） · 接口记录</span></>}
             </div>
           </div>
         </> : <div ref={gameRef} tabIndex={0} onKeyDown={keyDown} onBlur={event => {

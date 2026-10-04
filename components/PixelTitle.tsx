@@ -2,44 +2,67 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
+import { publicPath } from "@/siteConfig";
 
 type Point = { x: number; y: number };
 type Geometry = { width: number; height: number; cell: number; left: number; top: number; limitX: number; limitY: number };
+type PixelMask = { pixels: Point[]; width: number; height: number };
 
-// Each stroke is drawn on a tiny, deliberate pixel matrix. The Chinese glyphs
-// stay readable even on systems without a Chinese font installed.
-function makeGlyph(width: number, strokes: number[][]): Point[] {
-  const occupied = new Set<string>();
-  for (const [x, y, w, h] of strokes) {
-    for (let row = y; row < y + h; row++) {
-      for (let column = x; column < x + w; column++) {
-        if (column >= 0 && column < width && row >= 0 && row < 23) occupied.add(`${column},${row}`);
-      }
-    }
-  }
-  return Array.from(occupied, (pixel) => {
-    const [x, y] = pixel.split(",").map(Number);
-    return { x, y };
-  });
-}
-
-const GLYPHS = [
-  { width: 21, strokes: [[1, 3, 2, 2], [3, 5, 2, 2], [0, 9, 2, 2], [2, 11, 2, 2], [3, 15, 2, 3], [2, 17, 2, 3], [1, 19, 2, 3], [13, 1, 2, 22], [7, 5, 14, 2], [6, 10, 15, 2], [11, 13, 2, 3], [9, 15, 2, 3], [7, 17, 2, 3], [5, 19, 2, 2], [15, 13, 2, 3], [17, 15, 2, 3], [19, 17, 2, 3]] },
-  { width: 21, strokes: [[1, 4, 2, 2], [3, 6, 2, 2], [3, 14, 2, 3], [2, 17, 2, 3], [1, 20, 2, 2], [13, 1, 2, 3], [6, 5, 15, 2], [8, 9, 11, 2], [8, 11, 2, 3], [17, 11, 2, 3], [8, 14, 11, 2], [13, 16, 2, 7], [10, 21, 3, 2], [9, 17, 2, 3], [7, 19, 2, 2], [16, 17, 2, 3], [18, 19, 2, 2]] },
-  { width: 11, strokes: [[2, 10, 7, 2], [0, 12, 2, 8], [9, 12, 2, 8], [2, 20, 7, 2]] },
-  { width: 11, strokes: [[0, 10, 2, 5], [9, 10, 2, 5], [2, 15, 2, 4], [7, 15, 2, 4], [4, 19, 3, 3]] },
-  { width: 11, strokes: [[2, 10, 7, 2], [0, 12, 2, 8], [9, 12, 2, 8], [2, 20, 7, 2]] },
-];
-const PIXELS: Point[] = [];
-let wordWidth = 0;
-GLYPHS.forEach((glyph, index) => {
-  PIXELS.push(...makeGlyph(glyph.width, glyph.strokes).map((point) => ({ x: point.x + wordWidth, y: point.y })));
-  wordWidth += glyph.width + (index === GLYPHS.length - 1 ? 0 : 4);
-});
-const WORD_WIDTH = wordWidth;
+const TITLE = "沫凉ovo";
+const FONT_FAMILY = "Moliang ZCOOL KuaiLe";
 const clamp = (value: number, limit: number) => Math.max(-limit, Math.min(limit, value));
 
-export default function PixelTitle() {
+// Use the font's real glyph outlines, rasterized at 52px and sampled in 2px
+// squares. No manually approximated strokes or character shapes are involved.
+function sampleFont(family: string): PixelMask {
+  const source = document.createElement("canvas");
+  const measure = source.getContext("2d");
+  if (!measure) return { pixels: [], width: 1, height: 1 };
+  const font = `52px ${family}`;
+  measure.font = font;
+  const letterSpacing = 5;
+  const characters = [...TITLE];
+  const advances = characters.map((character) => measure.measureText(character).width);
+  source.width = Math.ceil(advances.reduce((sum, width) => sum + width, 0) + letterSpacing * (characters.length - 1) + 20);
+  source.height = 80;
+  measure.font = font;
+  measure.fillStyle = "white";
+  measure.textBaseline = "alphabetic";
+  let pen = 8;
+  characters.forEach((character, index) => {
+    measure.fillText(character, pen, 60);
+    pen += advances[index] + letterSpacing;
+  });
+  const raster = measure.getImageData(0, 0, source.width, source.height).data;
+  const pixels: Point[] = [];
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = 0;
+  let maxY = 0;
+  for (let y = 0; y < source.height; y += 2) {
+    for (let x = 0; x < source.width - 1; x += 2) {
+      let coverage = 0;
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = 0; dx < 2; dx++) coverage += raster[((y + dy) * source.width + x + dx) * 4 + 3];
+      }
+      if (coverage < 255) continue;
+      const point = { x: x / 2, y: y / 2 };
+      pixels.push(point);
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+  if (!pixels.length) return { pixels: [], width: 1, height: 1 };
+  return {
+    pixels: pixels.map(({ x, y }) => ({ x: x - minX, y: y - minY })),
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+  };
+}
+
+export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Regular.ttf") }: { fontUrl?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const positionRef = useRef<Point>({ x: 0, y: 0 });
   const geometryRef = useRef<Geometry | null>(null);
@@ -68,6 +91,9 @@ export default function PixelTitle() {
     let phase = 0;
     let lastTime = 0;
     let disposed = false;
+    let mask = sampleFont('"Microsoft YaHei", "PingFang SC", sans-serif');
+    const fontFace = new FontFace(FONT_FAMILY, `url("${fontUrl}")`, { style: "normal", weight: "400" });
+    canvas.dataset.fontStatus = "loading";
 
     function paint() {
       const geometry = geometryRef.current;
@@ -97,8 +123,8 @@ export default function PixelTitle() {
       context!.fillStyle = halo;
       context!.fillRect(0, 0, width, height);
       const gap = Math.max(0.45, cell * 0.14);
-      for (const point of PIXELS) {
-        const hue = (point.x / WORD_WIDTH * 295 + point.y * 2 + phase + 340) % 360;
+      for (const point of mask.pixels) {
+        const hue = (point.x / mask.width * 295 + point.y * 2 + phase + 340) % 360;
         const x = left + position.x + point.x * cell;
         const y = top + position.y + point.y * cell;
         context!.fillStyle = `hsl(${hue} 88% 69%)`;
@@ -133,9 +159,9 @@ export default function PixelTitle() {
       canvas!.width = Math.round(width * ratio);
       canvas!.height = Math.round(height * ratio);
       context!.setTransform(ratio, 0, 0, ratio, 0, 0);
-      const cell = Math.max(1, Math.min(6, (width - 40) / WORD_WIDTH, (height - 52) / 23));
-      const left = (width - WORD_WIDTH * cell) / 2;
-      const top = (height - 23 * cell) / 2;
+      const cell = Math.max(0.5, Math.min(6, (width - 40) / mask.width, (height - 52) / mask.height));
+      const left = (width - mask.width * cell) / 2;
+      const top = (height - mask.height * cell) / 2;
       const limitX = Math.max(0, left - 12);
       const limitY = Math.max(0, top - 12);
       geometryRef.current = { width, height, cell, left, top, limitX, limitY };
@@ -150,6 +176,19 @@ export default function PixelTitle() {
     observer.observe(canvas);
     resize();
     syncAnimation();
+    void fontFace.load().then((loadedFace) => {
+      if (disposed) return;
+      document.fonts.add(loadedFace);
+      mask = sampleFont(`"${FONT_FAMILY}"`);
+      canvas.dataset.fontStatus = "loaded";
+      canvas.dataset.fontFamily = "ZCOOL KuaiLe";
+      canvas.dataset.pixelCount = String(mask.pixels.length);
+      resize();
+    }).catch(() => {
+      if (disposed) return;
+      canvas.dataset.fontStatus = "error";
+      canvas.dataset.fontFamily = "system fallback";
+    });
     document.addEventListener("visibilitychange", syncAnimation);
     reducedMotion.addEventListener("change", syncAnimation);
     return () => {
@@ -158,9 +197,10 @@ export default function PixelTitle() {
       observer.disconnect();
       document.removeEventListener("visibilitychange", syncAnimation);
       reducedMotion.removeEventListener("change", syncAnimation);
+      document.fonts.delete(fontFace);
       repaintRef.current = null;
     };
-  }, []);
+  }, [fontUrl]);
 
   function pointerDown(event: PointerEvent<HTMLCanvasElement>) {
     if (!event.isPrimary || event.button !== 0) return;
@@ -206,8 +246,7 @@ export default function PixelTitle() {
           ref={canvasRef}
           role="img"
           aria-label="沫凉ovo"
-          aria-description="彩虹像素标题。可拖动，或用方向键移动，Home 键复位。"
-          aria-describedby="pixel-title-instructions"
+          aria-describedby="pixel-title-instructions pixel-title-keyboard"
           tabIndex={0}
           data-testid="pixel-title-canvas"
           data-offset-x="0"
@@ -221,6 +260,7 @@ export default function PixelTitle() {
           className="block w-full rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-inset"
           style={{ height: "clamp(156px, 28vw, 226px)", touchAction: "none", cursor: dragging ? "grabbing" : "grab" }}
         >沫凉ovo</canvas>
+        <span id="pixel-title-keyboard" className="sr-only">可用方向键移动，按住 Shift 加快，Home 键复位。</span>
         <div className="flex items-center justify-between gap-3 px-3 pb-1 pt-2 text-[11px] tracking-wide text-slate-400">
           <span id="pixel-title-instructions">拖动标题，给灵感换个位置</span>
           <button type="button" onClick={() => moveTo(0, 0)} className="shrink-0 rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300" aria-label="复位像素标题">复位 ↺</button>

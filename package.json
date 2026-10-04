@@ -7,8 +7,8 @@
     "build": "node scripts/build-pages.mjs",
     "start": "node scripts/preview.mjs",
     "lint": "eslint",
-    "usage:sync": "node scripts/sync-codex-usage.mjs",
-    "usage:serve": "node scripts/codex-usage-api.mjs"
+    "usage:serve": "node scripts/official-usage-api.mjs",
+    "usage:check": "node scripts/official-usage-api.mjs --check"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
