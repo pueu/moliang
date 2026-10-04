@@ -50,7 +50,10 @@ export default function SiteDashboard() {
           <span>这个小空间诞生了：<span className="text-indigo-600 dark:text-indigo-400 font-black">{uptimeStr}</span></span>
         </div>
 
-        <span>© {new Date().getFullYear()} 沫凉</span>
+        <div className="shrink-0 text-right">
+          <span className="block">© {new Date().getFullYear()} 沫凉</span>
+          <span className="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">powered by codex</span>
+        </div>
         {/* 备案信息 (🌟 从 siteConfig 读取链接和名称) */}
         {siteConfig.icpConfig && (
           <a
