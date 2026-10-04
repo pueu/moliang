@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { createSnake, stepSnake, turnSnake } from './snakeEngine';
 import type { Direction } from './snakeEngine';
 import { siteConfig } from '../siteConfig';
@@ -79,13 +80,14 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
   const requestLabel = !endpoint ? '用量数据待接入' : loading ? '正在读取用量接口' : activeRequest?.error ? `${activeRequest.error}${snapshot ? ' · 保留上次成功获取的接口记录' : ''}` : snapshot ? '每日 12:00 同步 · 上海时间' : '尚未获取用量记录';
   const usage = useMemo(() => buildUsage(snapshot), [snapshot]);
   const [mode, setMode] = useState<Mode>('daily');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<{ date: string; left: number; right: number; top: number; bottom: number } | null>(null);
   const [game, setGame] = useState(false);
   const [snake, setSnake] = useState(createSnake);
   const gameRef = useRef<HTMLDivElement>(null);
   const headingId = useId();
   const helpId = useId();
   const tabId = useId();
+  const tooltipId = useId();
   const statusText = { ready: '准备好了 · 点击开始', running: '游戏进行中', paused: '已暂停 · 点击继续', over: '游戏结束 · 再试一次', won: '完成整个网格！' }[snake.status];
   const currentWeek = usage.weeks[52];
   const todayRecord = usage.map.get(usage.today);
@@ -94,8 +96,8 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
   const values = usage.weeks.flatMap(week => week.dates.filter(date => date <= usage.today).map(date => mode === 'daily' ? (usage.map.get(date)?.tokens || 0) : mode === 'weekly' ? week.tokens : (usage.totals.get(date) || 0)));
   const maximum = Math.max(1, ...values);
   const intensity = (tokens: number) => !tokens ? 0 : Math.min(4, Math.max(1, Math.ceil(Math.sqrt(tokens / maximum) * 4)));
-  const selectedDay = selected ? usage.map.get(selected) : undefined;
-  const selectedWeek = selected ? usage.weeks.find(week => week.dates.includes(selected)) : undefined;
+  const selectedDay = selected ? usage.map.get(selected.date) : undefined;
+  const selectedWeek = selected ? usage.weeks.find(week => week.dates.includes(selected.date)) : undefined;
   const occupied = new Set(snake.snake.map(point => `${point.x},${point.y}`));
   const buttonClass = 'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300';
 
@@ -148,6 +150,26 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
   }, []);
 
   useEffect(() => { if (game) gameRef.current?.focus(); }, [game]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const dismiss = () => setSelected(null);
+    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') dismiss(); };
+    // Dismiss on scrolling, including the horizontally scrollable heatmap.
+    window.addEventListener('scroll', dismiss, true);
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('keydown', escape);
+    return () => {
+      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('keydown', escape);
+    };
+  }, [selected]);
+
+  function showUsage(date: string, element: HTMLButtonElement) {
+    const { left, right, top, bottom } = element.getBoundingClientRect();
+    setSelected({ date, left, right, top, bottom });
+  }
 
   function openGame() {
     setSelected(null);
@@ -229,7 +251,7 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
                       const tokens = mode === 'daily' ? (day?.tokens || 0) : mode === 'weekly' ? week.tokens : (usage.totals.get(date) || 0);
                       const label = `${date}，${day ? `${number(day.tokens)} tokens` : '未记录'}；点击玩贪吃蛇`;
                       if (future) return <span key={date} className="aspect-square rounded-[2px] bg-white/[0.02]" aria-hidden="true" />;
-                      return <button key={date} type="button" aria-label={label} onMouseEnter={() => setSelected(date)} onMouseLeave={() => setSelected(null)} onFocus={() => setSelected(date)} onBlur={() => setSelected(null)} onClick={openGame} className="aspect-square rounded-[2px] transition hover:scale-125 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-white" style={{ backgroundColor: recorded ? colors[intensity(tokens)] : '#111b27', boxShadow: recorded ? undefined : 'inset 0 0 0 1px #253040' }} />;
+                      return <button key={date} type="button" aria-label={label} aria-describedby={selected?.date === date ? tooltipId : undefined} onMouseEnter={event => showUsage(date, event.currentTarget)} onMouseLeave={() => setSelected(null)} onFocus={event => showUsage(date, event.currentTarget)} onBlur={() => setSelected(null)} onClick={openGame} className="aspect-square rounded-[2px] transition hover:scale-125 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-white" style={{ backgroundColor: recorded ? colors[intensity(tokens)] : '#111b27', boxShadow: recorded ? undefined : 'inset 0 0 0 1px #253040' }} />;
                     })}</div>)}
                   </div>
                 </div>
@@ -237,9 +259,20 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
             </div>
 
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500"><span>{mode === 'daily' ? '每格一天 · 总 tokens（含缓存输入）' : mode === 'weekly' ? '每列一周 · 全列显示该周已记录合计' : '每格显示截至该日的已记录累计用量'}</span><div className="flex items-center gap-1.5"><span>少</span>{colors.map(color => <span key={color} className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />)}<span>多</span><span className="ml-2 h-2.5 w-2.5 rounded-[2px] border border-slate-700 bg-[#111b27]" /><span>未记录</span></div></div>
-            <div role="status" aria-live="polite" className="mt-4 min-h-[66px] rounded-xl border border-white/5 bg-white/[0.025] px-3 py-2 text-[11px] leading-relaxed text-slate-400">
-              {selected ? <><strong className="font-medium text-slate-200">{selected}</strong>{mode === 'weekly' && selectedWeek && <span> · {selectedWeek.dates[0]} 至 {selectedWeek.dates[6] > usage.today ? usage.today : selectedWeek.dates[6]}：{selectedWeek.count ? `${number(selectedWeek.tokens)} tokens（已记录 ${selectedWeek.count} 天）` : '未记录'}</span>}{mode === 'total' && <span> · 截至当日累计 {number(usage.totals.get(selected) || 0)} tokens</span>}<br />{selectedDay ? <span>当天 {number(selectedDay.tokens)} tokens（含缓存输入）</span> : <span>当天未记录 · 缺失记录不代表用量为零</span>}</> : <><span>鼠标悬停或键盘聚焦查看当天记录。</span><br /><span>更新至 {usage.today}（上海时间） · 接口记录</span></>}
-            </div>
+            {selected && createPortal(
+              <div id={tooltipId} role="tooltip" ref={element => {
+                if (!element) return;
+                const { width, height } = element.getBoundingClientRect();
+                const left = Math.max(8, Math.min((selected.left + selected.right - width) / 2, window.innerWidth - width - 8));
+                const above = selected.top - height - 8;
+                const top = above >= 8 ? above : Math.min(selected.bottom + 8, window.innerHeight - height - 8);
+                element.style.left = `${left}px`;
+                element.style.top = `${Math.max(8, top)}px`;
+              }} className="pointer-events-none fixed z-[100] w-max max-w-[calc(100vw-16px)] rounded-xl border border-white/15 bg-[#24272d] px-3 py-2 text-sm leading-snug text-white shadow-xl">
+                <p className="font-medium">{mode === 'weekly' && selectedWeek ? `${selectedWeek.dates[0]} 至 ${selectedWeek.dates[6] > usage.today ? usage.today : selectedWeek.dates[6]}` : `${selected.date} ${mode === 'total' ? '累计' : ''}`}</p>
+                <p className="mt-0.5 text-cyan-200">{mode === 'weekly' ? selectedWeek?.count ? `${number(selectedWeek.tokens)} tokens` : '未记录' : mode === 'total' ? `${number(usage.totals.get(selected.date) || 0)} tokens` : selectedDay ? `${number(selectedDay.tokens)} tokens` : '未记录'}</p>
+              </div>, document.body,
+            )}
           </div>
         </> : <div ref={gameRef} tabIndex={0} onKeyDown={keyDown} onBlur={event => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSnake(previous => previous.status === 'running' ? { ...previous, pending: null, status: 'paused' } : previous);
