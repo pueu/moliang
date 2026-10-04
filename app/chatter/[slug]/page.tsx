@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 
 // 🌟 核心升级：引入 Next.js 现代统一解析流
 import { unified } from 'unified';
@@ -28,15 +29,18 @@ export async function generateStaticParams() {
   const chattersDirectory = path.join(process.cwd(), 'chatters');
   if (!fs.existsSync(chattersDirectory)) return [];
   const filenames = fs.readdirSync(chattersDirectory);
-  return filenames
+  const entries = filenames
     .filter((name) => name.endsWith('.md'))
     .map((name) => ({
       slug: name.replace(/\.md$/, ''),
     }));
+  // An empty collection still needs a path for Next.js static export; it renders 404.
+  return entries.length ? entries : [{ slug: '_empty' }];
 }
 
 async function getChatterData(slug: string) {
   const fullPath = path.join(process.cwd(), 'chatters', `${slug}.md`);
+  if (!fs.existsSync(fullPath)) notFound();
   const fileContents = fs.readFileSync(fullPath, 'utf8');
 
   let { data, content } = matter(fileContents);

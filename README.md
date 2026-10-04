@@ -1,6 +1,6 @@
 # 沫凉的个人主页
 
-毛玻璃卡片、动态背景、日夜切换、示例博客、联系栏，以及可切换成贪吃蛇的 Codex Token 活动图。页面下方的“沫凉ovo”使用 ZCOOL KuaiLe 艺术字体转成彩虹像素，支持拖动和方向键移动。
+毛玻璃卡片、动态背景、日夜切换、博客与杂谈、联系栏，以及可切换成贪吃蛇的 Codex Token 活动图。页面下方的“沫凉ovo”使用 ZCOOL KuaiLe 艺术字体转成彩虹像素，支持拖动和方向键移动。
 
 ## 本机运行
 
@@ -21,9 +21,9 @@
 
 ## Codex 使用量接口
 
-主页从 `https://moliang-codex-usage.omoliango.chatgpt.site/api/codex-usage` 读取统计。GitHub Actions 变量 `CODEX_USAGE_API_URL` 已配置为该公开 HTTPS 地址；页面每五分钟读取一次接口，手动刷新也只重读已同步的数据。接口允许 `https://pueu.github.io` 的 CORS GET。
+主页仅从配置的外部 HTTPS 接口读取统计。官方 Codex App Server 的 `account/usage/read` 提供 Token 汇总和可选的每日记录；需要在外部服务中完成账号认证并转接统计。接入与验证状态见 [USAGE-API.md](USAGE-API.md)。
 
-NAS 采集器已准备为上海时间每日 12:00 同步。首次 NAS 官方 Codex 设备登录与首轮同步完成前，统计接口会显示暂无记录；电脑离线不会影响 NAS 的定时任务。接入与验证状态见 [USAGE-API.md](USAGE-API.md)。
+仓库 Actions 变量 `CODEX_USAGE_API_URL` 配置公开 **HTTPS** 用量接口。NAS 每天上海时间 12:00 同步 Codex 使用量；页面从公开接口读取上次已同步的数据，手动刷新不会触发 NAS 采集。临时错误时只在当前页面内保留上次成功的接口结果。
 
 网站不读取本机聊天记录，不捆绑用量快照，也不向浏览器提供登录凭据。未接入数据时贪吃蛇仍可游玩。
 

@@ -80,6 +80,8 @@ export default function ChatterBoard({ chatters }: { chatters: Chatter[] }) {
         </div>
       </div>
 
+      {filteredChatters.length === 0 && <div className="rounded-3xl border border-white/40 bg-white/40 p-10 text-center text-slate-500 backdrop-blur-md dark:border-white/10 dark:bg-slate-800/50 dark:text-slate-400">{chatters.length === 0 ? '暂无杂谈，新的片段正在酝酿。' : '没有找到符合条件的杂谈。'}</div>}
+
       {/* 🌟 核心修改 1：瀑布流直接设定为 columns-2，减小间距 gap-3 */}
       <motion.div layout className="columns-2 lg:columns-3 gap-3 md:gap-6 space-y-3 md:space-y-6">
         <AnimatePresence mode='popLayout'>

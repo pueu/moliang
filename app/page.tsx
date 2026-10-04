@@ -64,7 +64,7 @@ export default function Home() {
       });
     }
   } catch (e) {}
-  const top5Posts = allPosts.length > 0 ? allPosts.slice(0, 5) : [{ slug: 'none', title: '暂无文章', description: '快去写第一篇吧！', cover: siteConfig.defaultPostCover, date: '', formattedDate: '' }];
+  const top5Posts = allPosts.length > 0 ? allPosts.slice(0, 5) : [{ slug: 'none', title: '暂无文章', description: '新的故事正在酝酿。', cover: publicPath(siteConfig.defaultPostCover), date: '', formattedDate: '' }];
 
   const chattersDirectory = path.join(process.cwd(), 'chatters');
   let allChatters: any[] = [];
@@ -85,7 +85,7 @@ export default function Home() {
       });
     }
   } catch (e) {}
-  const top5Chatters = allChatters.length > 0 ? allChatters.slice(0, 5) : [{ slug: 'none', title: '暂无记录', description: '记录一段思绪...', cover: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=1000&auto=format&fit=crop', date: '', formattedDate: '' }];
+  const top5Chatters = allChatters.length > 0 ? allChatters.slice(0, 5) : [{ slug: 'none', title: '暂无杂谈', description: '这里将收集日常的灵感与片段。', cover: publicPath(siteConfig.defaultPostCover), date: '', formattedDate: '' }];
 
   const chatterCount = allChatters.length;
   const realPhotoCount = albums.reduce((total, album) => total + album.photos.length, 0);
@@ -134,7 +134,7 @@ export default function Home() {
                     <div className="absolute inset-0 bg-black/30 dark:bg-black/50 group-hover:bg-black/10 transition-colors duration-500"></div>
                     <div className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 right-6">
                       <h3 className="text-2xl sm:text-3xl font-bold text-white mb-1 sm:mb-2 underline decoration-pink-400">文字与日常</h3>
-                      <p className="text-white/90 text-sm sm:text-lg line-clamp-1">阅读示例博客，发现日常里的小灵感</p>
+                      <p className="text-white/90 text-sm sm:text-lg line-clamp-1">收集日常的灵感，留下值得记住的故事</p>
                     </div>
                   </Link>
 
