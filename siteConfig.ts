@@ -37,11 +37,11 @@ export const siteConfig = {
   photoWallImage: publicPath("/landscape.jpg"),
   cloudMusicIds: [] as string[],
   social: {
-    github: "",
+    github: "https://github.com/pueu",
     gitee: "",
     google: "",
-    email: "",
-    qq: "",
+    email: "omo_liango@163.com",
+    qq: "3628105939",
     wechat: "",
   },
   counts: {

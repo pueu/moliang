@@ -10,7 +10,7 @@ import { siteConfig, publicPath } from '../siteConfig';
 import PixelTitle from '../components/PixelTitle';
 import CodexUsage from '../components/CodexUsage';
 import ContactCard from '../components/ContactCard';
-import ThemeToggleBlock from '../components/ThemeToggleBlock';
+import AlmanacCard from '../components/AlmanacCard';
 import ProfileCard from '../components/ProfileCard';
 import SiteDashboard from '../components/SiteDashboard';
 import { albums } from '../data/albums';
@@ -145,7 +145,7 @@ export default function Home() {
                       <LatestChatterCarousel chatters={top5Chatters} />
                     </div>
                     <div className="sm:col-span-1 flex flex-col min-h-[120px]">
-                      <ThemeToggleBlock />
+                      <AlmanacCard />
                     </div>
                   </div>
 

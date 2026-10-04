@@ -76,7 +76,7 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
   // Only successfully fetched API records live in memory; no local fallback.
   const snapshot = activeRequest?.snapshot ?? null;
   const loading = !!endpoint && (!activeRequest || activeRequest.loading);
-  const requestLabel = !endpoint ? '用量数据待接入' : loading ? '正在读取用量接口' : activeRequest?.error ? `${activeRequest.error}${snapshot ? ' · 保留上次成功获取的接口记录' : ''}` : snapshot ? '用量接口 · 每 5 分钟更新' : '尚未获取用量记录';
+  const requestLabel = !endpoint ? '用量数据待接入' : loading ? '正在读取用量接口' : activeRequest?.error ? `${activeRequest.error}${snapshot ? ' · 保留上次成功获取的接口记录' : ''}` : snapshot ? '每日 12:00 同步 · 上海时间' : '尚未获取用量记录';
   const usage = useMemo(() => buildUsage(snapshot), [snapshot]);
   const [mode, setMode] = useState<Mode>('daily');
   const [selected, setSelected] = useState<string | null>(null);

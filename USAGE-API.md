@@ -1,39 +1,22 @@
-# Codex 官方用量接口
+# 官方 Codex 用量与 NAS 同步
 
-主页从外部 HTTPS 服务读取统计，不读取本机会话日志、不捆绑快照、不生成示例用量。数据尚未接通时显示待接入状态，贪吃蛇仍可游玩。
+个人 ChatGPT Plus 账号通过官方 Codex 原生 app-server 的 account/usage/read 读取云端每日汇总，不扫描本机会话文件，不导出登录凭据。官方原生进程仅运行于自己的 NAS，不托管在公开接口中。
 
-## 官方数据源
+网站继续使用 GitHub Pages。外部 HTTPS 接口只保存 source、updatedAt、days（日期与 Token 数），其他字段不会入库。浏览器无凭据地读取 /api/codex-usage；NAS 使用独立上传密钥调用 /api/ingest，OpenAI 登录凭据不上传。
 
-[OpenAI 官方 App Server 文档](https://learn.chatgpt.com/docs/app-server#7-token-usage-chatgpt)提供 account/usage/read，返回 summary 和可选 dailyUsageBuckets。ChatGPT 登录可用，API-key-only 认证不适用。每日记录可能为 null，不能据此推算每日 Token 数量。此接口也不承诺涵盖普通 ChatGPT 网页的所有聊天。
+## 采集器
 
-GitHub Pages 只托管静态网页，因此官方登录和读取必须在另一个服务中完成。scripts/official-usage.mjs 使用官方 JSONL 协议，只调用 initialize、initialized、account/usage/read。它不访问 rollout 或聊天文件；只向网站返回日期、Token 总数、来源和获取时间。
+NAS 原生 Codex 单独完成一次 codex login --device-auth。登录状态保存在 NAS 受限目录；不复制电脑 auth.json。每天 Asia/Shanghai 12:00 采集一次，首次登录后手动同步一次。电脑离线不影响任务，NAS 无需公网 IPv4 或入站端口。失败时保留上一次成功汇总，页面展示采集时间。
 
-## 运行外部转接服务
+模块源代码见独立交付的 moliang-nas-collector；云端接收模块见 moliang-usage-api。部署配置、凭据与原生认证文件不提交 GitHub。
 
-服务主机需安装支持该方法的 Codex CLI，并由账号所有者在该主机完成 ChatGPT 登录。登录材料留在主机上；不要提交到 GitHub 或填入 NEXT_PUBLIC 变量。
+## 前端配置
 
-- 只读检查：npm run usage:check
-- 运行：npm run usage:serve
-- 默认绑定：127.0.0.1:8787；路径 /api/codex-usage
-- 可配置：CODEX_BINARY、USAGE_API_HOST、USAGE_API_PORT、CORS_ORIGIN
-- 默认允许的浏览器来源：https://pueu.github.io
+GitHub 仓库 Actions 变量 CODEX_USAGE_API_URL=https://moliang-codex-usage.wintry-pine-3959.chatgpt.site/api/codex-usage。构建时传入 NEXT_PUBLIC_CODEX_USAGE_API_URL。接口允许 https://pueu.github.io 的 CORS GET。页面的刷新按钮只重读已同步数据，不触发 NAS 采集。
 
-通过已有 HTTPS 反向代理公开上述单一路径，不要暴露 Codex App Server 原始接口。每五分钟更新统计，失败返回 503，错误只返回类别，不返回账号信息或私密诊断。/health 仅证明 HTTP 服务启动，不代表官方数据读取成功。
+官方返回的数据范围由服务端决定，fetchedAt 表示本次采集时间，不保证全天实时计数。
 
-## 网页配置
+## 官方参考
 
-在仓库 Settings → Secrets and variables → Actions → Variables 添加 CODEX_USAGE_API_URL，值为完整公开 HTTPS 地址，然后重新部署。浏览器请求不带 Cookie 或 Authorization。接口返回：
-
-    {
-      "updatedAt": "接口获取时间 ISO 8601",
-      "source": "OpenAI Codex · 官方账号用量",
-      "days": [{ "date": "YYYY-MM-DD", "tokens": 123 }]
-    }
-
-以上只说明协议，不会作为网站数据。累计图显示接口中已返回的每日记录之和，不把有限历史标成账号终身总量。刷新失败时仅在当前页面内保留上次成功结果，并明确显示错误。
-
-## 2026-10-04 验证状态
-
-官方文档确认方法存在。现有执行环境启动 Codex 子进程退出，尚未获得账号每日统计，不能声称已接通。归一化测试验证了字段白名单、无每日桶时拒绝伪造记录，以及日期/计数验证。外部服务器和公开 HTTPS 地址尚待提供。
-
-Tokscale 调研未采用：pueu 的公开资料接口返回 404，且服务响应未允许 GitHub Pages 跨域读取。没有向其上传数据或创建账号。
+- https://learn.chatgpt.com/docs/app-server#7-token-usage-chatgpt
+- https://learn.chatgpt.com/docs/auth#login-on-headless-devices

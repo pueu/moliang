@@ -1,16 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { publicPath } from "@/siteConfig";
 
 type Point = { x: number; y: number };
 type Geometry = { width: number; height: number; cell: number; left: number; top: number; limitX: number; limitY: number };
 type PixelMask = { pixels: Point[]; width: number; height: number };
+type Palette = "rainbow" | "candy" | "ocean";
 
 const TITLE = "沫凉ovo";
 const FONT_FAMILY = "Moliang ZCOOL KuaiLe";
+const PALETTES: Palette[] = ["rainbow", "candy", "ocean"];
+const PALETTE_NAMES: Record<Palette, string> = { rainbow: "彩虹", candy: "糖果", ocean: "海洋" };
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 const clamp = (value: number, limit: number) => Math.max(-limit, Math.min(limit, value));
+
+function subscribeReducedMotion(onChange: () => void) {
+  const media = window.matchMedia(REDUCED_MOTION_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+function readReducedMotion() {
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
+const serverReducedMotion = () => false;
 
 // Use the font's real glyph outlines, rasterized at 52px and sampled in 2px
 // squares. No manually approximated strokes or character shapes are involved.
@@ -67,8 +83,27 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
   const positionRef = useRef<Point>({ x: 0, y: 0 });
   const geometryRef = useRef<Geometry | null>(null);
   const repaintRef = useRef<(() => void) | null>(null);
+  const syncAnimationRef = useRef<(() => void) | null>(null);
+  const preferencesRef = useRef<{ palette: Palette; paused: boolean }>({ palette: "rainbow", paused: false });
   const dragRef = useRef<{ id: number; x: number; y: number; origin: Point } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [palette, setPalette] = useState<Palette>("rainbow");
+  const [paused, setPaused] = useState(false);
+  const motionReduced = useSyncExternalStore(subscribeReducedMotion, readReducedMotion, serverReducedMotion);
+
+  function cyclePalette() {
+    const next = PALETTES[(PALETTES.indexOf(preferencesRef.current.palette) + 1) % PALETTES.length];
+    preferencesRef.current.palette = next;
+    setPalette(next);
+    repaintRef.current?.();
+  }
+
+  function toggleAnimation() {
+    const next = !preferencesRef.current.paused;
+    preferencesRef.current.paused = next;
+    setPaused(next);
+    syncAnimationRef.current?.();
+  }
 
   function moveTo(x: number, y: number) {
     const geometry = geometryRef.current;
@@ -86,7 +121,7 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const reducedMotion = window.matchMedia(REDUCED_MOTION_QUERY);
     let frame = 0;
     let phase = 0;
     let lastTime = 0;
@@ -123,11 +158,16 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       context!.fillStyle = halo;
       context!.fillRect(0, 0, width, height);
       const gap = Math.max(0.45, cell * 0.14);
+      const selectedPalette = preferencesRef.current.palette;
       for (const point of mask.pixels) {
-        const hue = (point.x / mask.width * 295 + point.y * 2 + phase + 340) % 360;
+        const wave = Math.sin(point.x / mask.width * Math.PI * 2 + phase * Math.PI / 180 + point.y * 0.035);
+        const hue = selectedPalette === "rainbow"
+          ? (point.x / mask.width * 295 + point.y * 2 + phase + 340) % 360
+          : selectedPalette === "candy" ? 312 + wave * 42 : 193 + wave * 28;
+        const lightness = selectedPalette === "candy" ? 77 : selectedPalette === "ocean" ? 66 : 69;
         const x = left + position.x + point.x * cell;
         const y = top + position.y + point.y * cell;
-        context!.fillStyle = `hsl(${hue} 88% 69%)`;
+        context!.fillStyle = `hsl(${hue} 88% ${lightness}%)`;
         context!.fillRect(x + gap / 2, y + gap / 2, cell - gap, cell - gap);
         context!.fillStyle = "rgba(255,255,255,0.14)";
         context!.fillRect(x + gap / 2, y + gap / 2, cell - gap, Math.max(0.5, cell * 0.12));
@@ -136,7 +176,7 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
 
     function tick(time: number) {
       frame = 0;
-      if (disposed || document.hidden || reducedMotion.matches) return;
+      if (disposed || document.hidden || reducedMotion.matches || preferencesRef.current.paused) return;
       if (lastTime) phase = (phase + Math.min(time - lastTime, 100) * 0.007) % 360;
       lastTime = time;
       paint();
@@ -148,7 +188,8 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       frame = 0;
       lastTime = 0;
       paint();
-      if (!document.hidden && !reducedMotion.matches) frame = requestAnimationFrame(tick);
+      if (!document.hidden && !reducedMotion.matches && !preferencesRef.current.paused) frame = requestAnimationFrame(tick);
+      canvas!.dataset.animation = frame ? "playing" : "paused";
     }
 
     function resize() {
@@ -172,6 +213,7 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
     }
 
     repaintRef.current = paint;
+    syncAnimationRef.current = syncAnimation;
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
     resize();
@@ -199,6 +241,7 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       reducedMotion.removeEventListener("change", syncAnimation);
       document.fonts.delete(fontFace);
       repaintRef.current = null;
+      syncAnimationRef.current = null;
     };
   }, [fontUrl]);
 
@@ -240,8 +283,8 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
   }
 
   return (
-    <section aria-label="沫凉ovo 像素标题" className="mx-auto mb-7 w-full max-w-2xl">
-      <div className="overflow-hidden rounded-3xl border border-white/15 bg-slate-950/80 p-2 shadow-xl shadow-violet-950/10 backdrop-blur-xl">
+    <section aria-label="沫凉ovo 像素标题" className="mb-7 w-full min-w-0 self-stretch">
+      <div className="w-full overflow-hidden rounded-3xl border border-white/15 bg-slate-950/80 p-2 shadow-xl shadow-violet-950/10 backdrop-blur-xl">
         <canvas
           ref={canvasRef}
           role="img"
@@ -249,6 +292,7 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
           aria-describedby="pixel-title-instructions pixel-title-keyboard"
           tabIndex={0}
           data-testid="pixel-title-canvas"
+          data-palette={palette}
           data-offset-x="0"
           data-offset-y="0"
           onPointerDown={pointerDown}
@@ -261,9 +305,13 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
           style={{ height: "clamp(156px, 28vw, 226px)", touchAction: "none", cursor: dragging ? "grabbing" : "grab" }}
         >沫凉ovo</canvas>
         <span id="pixel-title-keyboard" className="sr-only">可用方向键移动，按住 Shift 加快，Home 键复位。</span>
-        <div className="flex items-center justify-between gap-3 px-3 pb-1 pt-2 text-[11px] tracking-wide text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pb-1 pt-2 text-[11px] tracking-wide text-slate-400">
           <span id="pixel-title-instructions">拖动标题，给灵感换个位置</span>
-          <button type="button" onClick={() => moveTo(0, 0)} className="shrink-0 rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300" aria-label="复位像素标题">复位 ↺</button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button type="button" onClick={cyclePalette} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300" aria-label={`切换标题配色，当前${PALETTE_NAMES[palette]}`}><span aria-hidden="true">◈ </span>{PALETTE_NAMES[palette]}</button>
+            <button type="button" onClick={toggleAnimation} disabled={motionReduced} aria-pressed={paused || motionReduced} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300 disabled:cursor-default disabled:opacity-55" aria-label={motionReduced ? "系统已减少动态，动画暂停" : paused ? "播放标题动画" : "暂停标题动画"} title={motionReduced ? "已按系统偏好减少动态" : paused ? "播放动画" : "暂停动画"}><span aria-hidden="true">{paused || motionReduced ? "▶" : "Ⅱ"}</span></button>
+            <button type="button" onClick={() => moveTo(0, 0)} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300" aria-label="复位像素标题">复位 ↺</button>
+          </div>
         </div>
       </div>
     </section>

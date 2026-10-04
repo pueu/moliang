@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform, PanInfo } from 'framer-motion';
 import { siteConfig } from '../siteConfig';
+import ThemeToggleBlock from './ThemeToggleBlock';
 
 export default function Navbar() {
   const [showNav, setShowNav] = useState(true);
@@ -89,7 +90,7 @@ export default function Navbar() {
             <span className="text-indigo-500 mx-1">{siteConfig.navSuffix || 'の'}</span>
             {siteConfig.navAfter || '个人主页'}
           </Link>
-          <nav className="flex gap-8 text-sm font-bold">
+          <nav className="flex items-center gap-6 text-sm font-bold">
             {/* PC端依然使用全量的 navLinks */}
             {navLinks.map((link) => {
               const isActive = pathname === link.href || pathname === `${link.href}/`;
@@ -100,12 +101,14 @@ export default function Navbar() {
                 </Link>
               );
             })}
+            <ThemeToggleBlock />
           </nav>
         </div>
       </header>
 
       {/* 📱 手机端：可拖拽吸附的触发球 */}
       <div className="md:hidden">
+        <div className="fixed top-4 right-4 z-[60]"><ThemeToggleBlock /></div>
         <motion.button
           aria-label="打开导航菜单"
           drag="y"

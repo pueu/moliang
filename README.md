@@ -8,7 +8,7 @@
 - 开发：`npm run dev`，端口 3000
 - 构建：`npm run build`，静态文件生成到 `out/`
 - 预览：`npm start`，打开终端显示的本机地址
-- 个人介绍、联系方式：`siteConfig.ts`；邮箱、GitHub、QQ 暂留空
+- 个人介绍、联系方式：`siteConfig.ts`；已配置邮箱、pueu GitHub 和 QQ
 - 博客：`posts/*.md`；杂谈：`chatters/*.md`；关于页：`app/about/about.md`
 
 ## GitHub Pages
