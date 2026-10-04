@@ -21,9 +21,9 @@
 
 ## Codex 使用量接口
 
-主页仅从配置的外部 HTTPS 接口读取统计。官方 Codex App Server 的 `account/usage/read` 提供 Token 汇总和可选的每日记录；需要在外部服务中完成账号认证并转接统计。接入与验证状态见 [USAGE-API.md](USAGE-API.md)。
+主页从 `https://moliang-codex-usage.omoliango.chatgpt.site/api/codex-usage` 读取统计。GitHub Actions 变量 `CODEX_USAGE_API_URL` 已配置为该公开 HTTPS 地址；页面每五分钟读取一次接口，手动刷新也只重读已同步的数据。接口允许 `https://pueu.github.io` 的 CORS GET。
 
-把公开 **HTTPS** 接口完整地址填入仓库 Settings → Secrets and variables → Actions → Variables 中的 `CODEX_USAGE_API_URL`，然后重新运行部署工作流。页面每五分钟刷新接口，未配置时显示待接入状态；临时错误时只在当前页面内保留上次成功的接口结果。
+NAS 采集器已准备为上海时间每日 12:00 同步。首次 NAS 官方 Codex 设备登录与首轮同步完成前，统计接口会显示暂无记录；电脑离线不会影响 NAS 的定时任务。接入与验证状态见 [USAGE-API.md](USAGE-API.md)。
 
 网站不读取本机聊天记录，不捆绑用量快照，也不向浏览器提供登录凭据。未接入数据时贪吃蛇仍可游玩。
 
