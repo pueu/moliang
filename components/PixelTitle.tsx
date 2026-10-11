@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { publicPath } from "@/siteConfig";
+import { createBreakout, movePaddle, stepBreakout } from './breakoutEngine';
+import type { Breakout } from './breakoutEngine';
 
 type Point = { x: number; y: number };
 type Geometry = { width: number; height: number; cell: number; left: number; top: number; limitX: number; limitY: number };
@@ -84,28 +86,29 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
   const geometryRef = useRef<Geometry | null>(null);
   const repaintRef = useRef<(() => void) | null>(null);
   const syncAnimationRef = useRef<(() => void) | null>(null);
+  const gameRef = useRef<Breakout | null>(null);
+  const controlsRef = useRef<{ start: () => void; toggle: () => void; exit: () => void } | null>(null);
+  const keysRef = useRef(new Set<string>());
   const preferencesRef = useRef<{ palette: Palette; paused: boolean }>({ palette: "rainbow", paused: false });
   const dragRef = useRef<{ id: number; x: number; y: number; origin: Point } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [palette, setPalette] = useState<Palette>("rainbow");
-  const [paused, setPaused] = useState(false);
-  const motionReduced = useSyncExternalStore(subscribeReducedMotion, readReducedMotion, serverReducedMotion);
+  const [playing, setPlaying] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [hud, setHud] = useState({ score: 0, lives: 3, paused: false });
+  const [result, setResult] = useState('');
+  useSyncExternalStore(subscribeReducedMotion, readReducedMotion, serverReducedMotion);
 
   function cyclePalette() {
+    if (gameRef.current) return;
     const next = PALETTES[(PALETTES.indexOf(preferencesRef.current.palette) + 1) % PALETTES.length];
     preferencesRef.current.palette = next;
     setPalette(next);
     repaintRef.current?.();
   }
 
-  function toggleAnimation() {
-    const next = !preferencesRef.current.paused;
-    preferencesRef.current.paused = next;
-    setPaused(next);
-    syncAnimationRef.current?.();
-  }
-
   function moveTo(x: number, y: number) {
+    if (gameRef.current) return;
     const geometry = geometryRef.current;
     if (!geometry) return;
     positionRef.current = { x: clamp(x, geometry.limitX), y: clamp(y, geometry.limitY) };
@@ -127,6 +130,7 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
     let lastTime = 0;
     let disposed = false;
     let mask = sampleFont('"Microsoft YaHei", "PingFang SC", sans-serif');
+    let savedPosition: Point = { x: 0, y: 0 };
     const fontFace = new FontFace(FONT_FAMILY, `url("${fontUrl}")`, { style: "normal", weight: "400" });
     canvas.dataset.fontStatus = "loading";
 
@@ -159,7 +163,9 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       context!.fillRect(0, 0, width, height);
       const gap = Math.max(0.45, cell * 0.14);
       const selectedPalette = preferencesRef.current.palette;
-      for (const point of mask.pixels) {
+      const game = gameRef.current;
+      for (const [pixel, point] of mask.pixels.entries()) {
+        if (game && !game.bricks[pixel]?.alive) continue;
         const wave = Math.sin(point.x / mask.width * Math.PI * 2 + phase * Math.PI / 180 + point.y * 0.035);
         const hue = selectedPalette === "rainbow"
           ? (point.x / mask.width * 295 + point.y * 2 + phase + 340) % 360
@@ -172,12 +178,90 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
         context!.fillStyle = "rgba(255,255,255,0.14)";
         context!.fillRect(x + gap / 2, y + gap / 2, cell - gap, Math.max(0.5, cell * 0.12));
       }
+      if (game) {
+        const { paddle, ball } = game;
+        context!.fillStyle = '#b5a5ff';
+        context!.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+        context!.beginPath();
+        context!.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        context!.fillStyle = '#ffffff';
+        context!.fill();
+        context!.font = '12px system-ui, sans-serif';
+        context!.fillStyle = '#c9bfff';
+        context!.fillText(`${game.score} 分  ·  ${game.lives} 条生命  ·  剩余 ${game.remaining} 块`, 14, 23);
+        if (game.status === 'paused') {
+          context!.fillStyle = 'rgba(10, 13, 24, 0.55)';
+          context!.fillRect(0, 0, width, height);
+          context!.textAlign = 'center';
+          context!.font = 'bold 18px system-ui, sans-serif';
+          context!.fillStyle = '#ffffff';
+          context!.fillText('已暂停 · 点击继续或按空格', width / 2, height / 2);
+          context!.textAlign = 'start';
+        }
+      }
     }
+
+    function finish(message: string) {
+      gameRef.current = null;
+      keysRef.current.clear();
+      positionRef.current = savedPosition;
+      setPlaying(false);
+      setResult(message);
+      canvas!.dataset.gameState = 'idle';
+      syncAnimation();
+    }
+
+    controlsRef.current = {
+      start() {
+        const geometry = geometryRef.current;
+        if (!geometry || !mask.pixels.length) return;
+        savedPosition = { ...positionRef.current };
+        positionRef.current = { x: 0, y: 0 };
+        dragRef.current = null;
+        setDragging(false);
+        keysRef.current.clear();
+        const gap = Math.max(0.45, geometry.cell * 0.14);
+        gameRef.current = createBreakout(mask.pixels.map((point, pixel) => ({
+          pixel, x: geometry.left + point.x * geometry.cell + gap / 2,
+          y: geometry.top + point.y * geometry.cell + gap / 2,
+          width: geometry.cell - gap, height: geometry.cell - gap,
+        })), geometry.width, geometry.height);
+        setHud({ score: 0, lives: 3, paused: false });
+        setResult('');
+        setPlaying(true);
+        canvas!.dataset.gameState = 'running';
+        canvas!.focus({ preventScroll: true });
+        syncAnimation();
+      },
+      toggle() {
+        const game = gameRef.current;
+        if (!game) return;
+        game.status = game.status === 'running' ? 'paused' : 'running';
+        keysRef.current.clear();
+        setHud({ score: game.score, lives: game.lives, paused: game.status === 'paused' });
+        canvas!.dataset.gameState = game.status;
+        canvas!.focus({ preventScroll: true });
+        syncAnimation();
+      },
+      exit() { finish('已退出 · 标题恢复拖动'); },
+    };
 
     function tick(time: number) {
       frame = 0;
-      if (disposed || document.hidden || reducedMotion.matches || preferencesRef.current.paused) return;
-      if (lastTime) phase = (phase + Math.min(time - lastTime, 100) * 0.007) % 360;
+      const game = gameRef.current;
+      if (disposed || document.hidden || (game ? game.status !== 'running' : reducedMotion.matches || preferencesRef.current.paused)) return;
+      const elapsed = lastTime ? Math.min(time - lastTime, 50) / 1000 : 0;
+      if (game) {
+        const direction = Number(keysRef.current.has('ArrowRight') || keysRef.current.has('d')) - Number(keysRef.current.has('ArrowLeft') || keysRef.current.has('a'));
+        if (direction) movePaddle(game, game.paddle.x + game.paddle.width / 2 + direction * geometryRef.current!.width * elapsed * 0.85);
+        const previousScore = game.score, previousLives = game.lives;
+        stepBreakout(game, elapsed);
+        if (game.score !== previousScore || game.lives !== previousLives) setHud({ score: game.score, lives: game.lives, paused: false });
+        if (game.status === 'won' || game.status === 'over') {
+          finish(`${game.status === 'won' ? '全部击碎，通关！' : '游戏结束'} · ${game.score} 分 · 标题恢复拖动`);
+          return;
+        }
+      } else if (lastTime) phase = (phase + elapsed * 7) % 360;
       lastTime = time;
       paint();
       frame = requestAnimationFrame(tick);
@@ -188,7 +272,8 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       frame = 0;
       lastTime = 0;
       paint();
-      if (!document.hidden && !reducedMotion.matches && !preferencesRef.current.paused) frame = requestAnimationFrame(tick);
+      const game = gameRef.current;
+      if (!document.hidden && (game ? game.status === 'running' : !reducedMotion.matches && !preferencesRef.current.paused)) frame = requestAnimationFrame(tick);
       canvas!.dataset.animation = frame ? "playing" : "paused";
     }
 
@@ -205,6 +290,25 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       const top = (height - mask.height * cell) / 2;
       const limitX = Math.max(0, left - 12);
       const limitY = Math.max(0, top - 12);
+      const game = gameRef.current;
+      if (game) {
+        const scaleX = width / game.width, scaleY = height / game.height;
+        game.ball.x *= scaleX;
+        game.ball.y *= scaleY;
+        const paddleCenter = (game.paddle.x + game.paddle.width / 2) * scaleX;
+        game.width = width;
+        game.height = height;
+        game.paddle.width = Math.min(width - 24, Math.max(66, width * 0.16));
+        game.paddle.y = height - 22;
+        movePaddle(game, paddleCenter);
+        const gap = Math.max(0.45, cell * 0.14);
+        for (const brick of game.bricks) {
+          const point = mask.pixels[brick.pixel];
+          brick.x = left + point.x * cell + gap / 2;
+          brick.y = top + point.y * cell + gap / 2;
+          brick.width = brick.height = cell - gap;
+        }
+      }
       geometryRef.current = { width, height, cell, left, top, limitX, limitY };
       positionRef.current = { x: clamp(positionRef.current.x, limitX), y: clamp(positionRef.current.y, limitY) };
       canvas!.dataset.offsetX = positionRef.current.x.toFixed(2);
@@ -226,22 +330,43 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       canvas.dataset.fontFamily = "ZCOOL KuaiLe";
       canvas.dataset.pixelCount = String(mask.pixels.length);
       resize();
+      setReady(true);
     }).catch(() => {
       if (disposed) return;
       canvas.dataset.fontStatus = "error";
       canvas.dataset.fontFamily = "system fallback";
+      setReady(true);
     });
-    document.addEventListener("visibilitychange", syncAnimation);
+    function suspend() {
+      const game = gameRef.current;
+      if (game?.status === 'running') {
+        game.status = 'paused';
+        keysRef.current.clear();
+        setHud({ score: game.score, lives: game.lives, paused: true });
+        canvas!.dataset.gameState = 'paused';
+      }
+      syncAnimation();
+    }
+    function visibility() { if (document.hidden) suspend(); else syncAnimation(); }
+    function releaseKey(event: globalThis.KeyboardEvent) { keysRef.current.delete(event.key.toLowerCase().length === 1 ? event.key.toLowerCase() : event.key); }
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener('blur', suspend);
+    window.addEventListener('keyup', releaseKey);
     reducedMotion.addEventListener("change", syncAnimation);
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
       observer.disconnect();
-      document.removeEventListener("visibilitychange", syncAnimation);
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener('blur', suspend);
+      window.removeEventListener('keyup', releaseKey);
       reducedMotion.removeEventListener("change", syncAnimation);
       document.fonts.delete(fontFace);
       repaintRef.current = null;
       syncAnimationRef.current = null;
+      controlsRef.current = null;
+      gameRef.current = null;
+      keysRef.current.clear();
     };
   }, [fontUrl]);
 
@@ -249,17 +374,31 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
     if (!event.isPrimary || event.button !== 0) return;
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
+    if (gameRef.current) {
+      pointerMove(event);
+      return;
+    }
     dragRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, origin: { ...positionRef.current } };
     setDragging(true);
   }
 
   function pointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    if (gameRef.current) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      movePaddle(gameRef.current, event.clientX - bounds.left);
+      repaintRef.current?.();
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || drag.id !== event.pointerId) return;
     moveTo(drag.origin.x + event.clientX - drag.x, drag.origin.y + event.clientY - drag.y);
   }
 
   function endDrag(event: PointerEvent<HTMLCanvasElement>) {
+    if (gameRef.current) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      return;
+    }
     if (dragRef.current?.id !== event.pointerId) return;
     dragRef.current = null;
     setDragging(false);
@@ -267,6 +406,14 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
   }
 
   function keyboardMove(event: KeyboardEvent<HTMLCanvasElement>) {
+    if (gameRef.current) {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'Home', ' ', 'Escape'].includes(key)) event.preventDefault();
+      if (key === ' ' && !event.repeat) controlsRef.current?.toggle();
+      else if (key === 'Escape') controlsRef.current?.exit();
+      else if (['ArrowLeft', 'ArrowRight', 'a', 'd'].includes(key)) keysRef.current.add(key);
+      return;
+    }
     const distance = event.shiftKey ? 12 : 4;
     const directions: Record<string, Point> = {
       ArrowLeft: { x: -distance, y: 0 }, ArrowRight: { x: distance, y: 0 },
@@ -287,11 +434,13 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
       <div className="w-full overflow-hidden rounded-3xl border border-white/15 bg-slate-950/80 p-2 shadow-xl shadow-violet-950/10 backdrop-blur-xl">
         <canvas
           ref={canvasRef}
-          role="img"
-          aria-label="沫凉ovo"
+          role={playing ? 'application' : 'img'}
+          aria-label={playing ? '沫凉ovo 像素打砖块' : '沫凉ovo'}
           aria-describedby="pixel-title-instructions pixel-title-keyboard"
           tabIndex={0}
           data-testid="pixel-title-canvas"
+          data-game-state={playing ? hud.paused ? 'paused' : 'running' : 'idle'}
+          data-title-locked={playing ? 'true' : 'false'}
           data-palette={palette}
           data-offset-x="0"
           data-offset-y="0"
@@ -302,15 +451,15 @@ export default function PixelTitle({ fontUrl = publicPath("/fonts/ZCOOLKuaiLe-Re
           onLostPointerCapture={endDrag}
           onKeyDown={keyboardMove}
           className="block w-full rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-inset"
-          style={{ height: "clamp(156px, 28vw, 226px)", touchAction: "none", cursor: dragging ? "grabbing" : "grab" }}
+          style={{ height: playing ? "clamp(280px, 35vw, 360px)" : "clamp(156px, 28vw, 226px)", touchAction: "none", cursor: playing ? 'crosshair' : dragging ? "grabbing" : "grab" }}
         >沫凉ovo</canvas>
-        <span id="pixel-title-keyboard" className="sr-only">可用方向键移动，按住 Shift 加快，Home 键复位。</span>
+        <span id="pixel-title-keyboard" className="sr-only">{playing ? '鼠标、触屏或左右方向键控制挡板。空格暂停或继续，Escape 退出。游戏期间标题不可移动。' : '可用方向键移动，按住 Shift 加快，Home 键复位。'}</span>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pb-1 pt-2 text-[11px] tracking-wide text-slate-400">
-          <span id="pixel-title-instructions">拖动标题，给灵感换个位置</span>
+          <span id="pixel-title-instructions" role="status" aria-live="polite">{playing ? `${hud.score} 分 · ${hud.lives} 条生命 · ${hud.paused ? '已暂停' : '移动鼠标 / ← → 控制挡板'} · 标题已锁定` : result || '拖动标题，给灵感换个位置 · ▶ 开始打砖块'}</span>
           <div className="flex shrink-0 items-center gap-1">
-            <button type="button" onClick={cyclePalette} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300" aria-label={`切换标题配色，当前${PALETTE_NAMES[palette]}`}><span aria-hidden="true">◈ </span>{PALETTE_NAMES[palette]}</button>
-            <button type="button" onClick={toggleAnimation} disabled={motionReduced} aria-pressed={paused || motionReduced} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300 disabled:cursor-default disabled:opacity-55" aria-label={motionReduced ? "系统已减少动态，动画暂停" : paused ? "播放标题动画" : "暂停标题动画"} title={motionReduced ? "已按系统偏好减少动态" : paused ? "播放动画" : "暂停动画"}><span aria-hidden="true">{paused || motionReduced ? "▶" : "Ⅱ"}</span></button>
-            <button type="button" onClick={() => moveTo(0, 0)} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300" aria-label="复位像素标题">复位 ↺</button>
+            <button type="button" disabled={playing} onClick={cyclePalette} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300 disabled:opacity-40" aria-label={`切换标题配色，当前${PALETTE_NAMES[palette]}`}><span aria-hidden="true">◈ </span>{PALETTE_NAMES[palette]}</button>
+            <button type="button" disabled={!ready} onClick={() => playing ? controlsRef.current?.toggle() : controlsRef.current?.start()} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300 disabled:opacity-40" aria-label={!playing ? '开始像素打砖块' : hud.paused ? '继续打砖块' : '暂停打砖块'}>{!playing ? '▶ 开始' : hud.paused ? '▶ 继续' : 'Ⅱ 暂停'}</button>
+            <button type="button" onClick={() => playing ? controlsRef.current?.exit() : moveTo(0, 0)} className="rounded-md px-2 py-1 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300" aria-label={playing ? '退出打砖块并恢复标题' : '复位像素标题'}>{playing ? '退出 ↩' : '复位 ↺'}</button>
           </div>
         </div>
       </div>
