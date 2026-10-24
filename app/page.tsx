@@ -17,8 +17,8 @@ import { albums } from '../data/albums';
 import LyricBar from '../components/LyricBar';
 import { ToastProvider } from '../components/ToastProvider';
 
-import LatestPostsCarousel from '../components/LatestPostsCarousel';
-import LatestChatterCarousel from '../components/LatestChatterCarousel';
+import GachaMachine from '../components/toys/GachaMachine';
+import MusicRoom from '../components/toys/MusicRoom';
 import DanmakuBackground from '../components/DanmakuBackground';
 
 function formatUpdateTime(dateString: string) {
@@ -117,38 +117,11 @@ export default function Home() {
               {/* 歌词栏 */}
               <div className="w-full mt-[-10px] rounded-3xl bg-slate-900/75 backdrop-blur-md border border-white/20 shadow-xl px-6 py-5 text-center text-white font-bold tracking-wider">保持好奇，慢慢创造。<span className="ml-4 text-indigo-200">✧</span></div>
 
-              {/* 第二行：文章轮播 + 照片墙 + 说说 + 主题切换 */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
-
-                {/* 左侧：文章轮播 (电脑端占4列，手机端排最上面) */}
-                <div className="col-span-1 lg:col-span-4 flex flex-col min-h-[300px]">
-                  <LatestPostsCarousel posts={top5Posts} />
-                </div>
-
-                {/* 右侧：组合面板 (电脑端占8列) */}
-                <div className="col-span-1 lg:col-span-8 flex flex-col gap-6">
-
-                  {/* 照片墙大海报 */}
-                  <Link href="/timeline" className="w-full rounded-3xl bg-white/40 dark:bg-slate-800/50 backdrop-blur-md border border-white/40 dark:border-white/10 shadow-xl overflow-hidden transition-all duration-700 hover:scale-[1.02] relative group min-h-[200px] sm:min-h-[220px] flex-shrink-0">
-                    <img src={siteConfig.photoWallImage} className="w-full h-full absolute inset-0 object-cover transition-transform duration-700 group-hover:scale-105 opacity-90"/>
-                    <div className="absolute inset-0 bg-black/30 dark:bg-black/50 group-hover:bg-black/10 transition-colors duration-500"></div>
-                    <div className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 right-6">
-                      <h3 className="text-2xl sm:text-3xl font-bold text-white mb-1 sm:mb-2 underline decoration-pink-400">文字与日常</h3>
-                      <p className="text-white/90 text-sm sm:text-lg line-clamp-1">收集日常的灵感，留下值得记住的故事</p>
-                    </div>
-                  </Link>
-
-                  {/* 底层网格：说说轮播 + 主题切换器 */}
-                  {/* 手机上单列，平板上分3列比例分布 */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full flex-1">
-                    <div className="sm:col-span-2 flex flex-col min-h-[200px]">
-                      <LatestChatterCarousel chatters={top5Chatters} />
-                    </div>
-                    <div className="sm:col-span-1 flex flex-col min-h-[120px]">
-                      <AlmanacCard />
-                    </div>
-                  </div>
-
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-stretch">
+                <div className="lg:col-span-5 min-w-0"><GachaMachine /></div>
+                <div className="lg:col-span-7 flex flex-col gap-6 min-w-0">
+                  <MusicRoom />
+                  <AlmanacCard />
                 </div>
               </div>
 
