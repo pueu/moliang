@@ -5,82 +5,24 @@ import type { KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { createSnake, stepSnake, turnSnake } from './snakeEngine';
 import type { Direction } from './snakeEngine';
-import { siteConfig } from '../siteConfig';
-import { normalizeUsageResponse } from './usageAdapter';
+import { buildDemoView, DEMO_START, generateDemoUsage, shanghaiDate } from './demoUsage';
 import { formatTokens, getWeekUsage } from './usageSummary';
 
-export interface UsageSnapshot {
-  updatedAt: string;
-  source: string;
-  days: { date: string; tokens: number }[];
-}
-
-type Day = UsageSnapshot['days'][number];
 type Mode = 'daily' | 'weekly' | 'total';
 const DAY_MS = 86_400_000;
 const colors = ['#182431', '#163e61', '#12618b', '#188eb8', '#43d2e8'];
 const CELL_SIZE = 11;
 const CELL_GAP = 4;
-const GRID_COLUMNS = `repeat(53, ${CELL_SIZE}px)`;
-const isoDate = (time: number) => new Date(time).toISOString().slice(0, 10);
-const dayTime = (date: string) => Date.parse(`${date}T00:00:00Z`);
 
-function publicApiUrl(value: string): string {
-  const url = new URL(value);
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.username || url.password || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))) throw new Error('接口地址需使用 HTTPS，本机开发可使用 localhost HTTP');
-  return url.href;
-}
-
-function snapshotDate(value: string): string {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '1970-01-01';
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
-  const get = (type: string) => parts.find(part => part.type === type)?.value;
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-function buildUsage(data: UsageSnapshot | null) {
-  if (!data) return { today: '', map: new Map<string, Day>(), weeks: Array.from({ length: 53 }, () => ({ dates: [] as string[], tokens: 0, count: 0 })), totals: new Map<string, number>(), total: 0 };
-  const today = snapshotDate(data.updatedAt);
-  const end = dayTime(today);
-  const weekStart = end - ((new Date(end).getUTCDay() + 6) % 7) * DAY_MS;
-  const start = weekStart - 52 * 7 * DAY_MS;
-  const map = new Map<string, Day>();
-  for (const day of data.days) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day.date) || day.date > today) continue;
-    const previous = map.get(day.date);
-    const safe = (value: number) => Number.isFinite(value) ? Math.max(0, value) : 0;
-    map.set(day.date, {
-      date: day.date,
-      tokens: (previous?.tokens || 0) + safe(day.tokens),
-    });
-  }
-  const weeks = Array.from({ length: 53 }, (_, week) => {
-    const dates = Array.from({ length: 7 }, (_, row) => isoDate(start + (week * 7 + row) * DAY_MS));
-    const recorded = dates.map(date => map.get(date)).filter((day): day is Day => !!day);
-    return { dates, tokens: recorded.reduce((sum, day) => sum + day.tokens, 0), count: recorded.length };
-  });
-  let cumulative = [...map.values()].filter(day => day.date < isoDate(start)).reduce((sum, day) => sum + day.tokens, 0);
-  const totals = new Map<string, number>();
-  for (const week of weeks) for (const date of week.dates) {
-    cumulative += map.get(date)?.tokens || 0;
-    totals.set(date, cumulative);
-  }
-  return { today, map, weeks, totals, total: [...map.values()].reduce((sum, day) => sum + day.tokens, 0) };
-}
-
-export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
-  const endpoint = (apiUrl ?? (process.env.NEXT_PUBLIC_CODEX_USAGE_API_URL?.trim() || siteConfig.usageApiUrl || '')).trim();
-  const [refresh, setRefresh] = useState(0);
-  const [request, setRequest] = useState<{ endpoint: string; snapshot: UsageSnapshot | null; loading: boolean; error: string | null }>({ endpoint, snapshot: null, loading: !!endpoint, error: null });
-  const activeRequest = request.endpoint === endpoint ? request : null;
-  // Only successfully fetched API records live in memory; no local fallback.
-  const snapshot = activeRequest?.snapshot ?? null;
-  const loading = !!endpoint && (!activeRequest || activeRequest.loading);
-  const requestLabel = !endpoint ? '用量数据待接入' : loading ? '正在读取用量接口' : activeRequest?.error ? `${activeRequest.error}${snapshot ? ' · 保留上次成功获取的接口记录' : ''}` : snapshot ? '每日 12:00 同步 · 上海时间' : '尚未获取用量记录';
-  const usage = useMemo(() => buildUsage(snapshot), [snapshot]);
+export default function CodexUsage() {
+  const [today, setToday] = useState('');
+  const [period, setPeriod] = useState('all');
+  const snapshot = useMemo(() => today ? generateDemoUsage(today) : null, [today]);
+  const usage = useMemo(() => buildDemoView(snapshot, period), [snapshot, period]);
+  const columns = Math.max(1, usage.weeks.length);
+  const gridColumns = `repeat(${columns}, ${CELL_SIZE}px)`;
+  const gridRef = useRef<HTMLDivElement>(null);
+  const years = snapshot ? Array.from({ length: Math.max(0, Number(snapshot.cutoff.slice(0, 4)) - Number(DEMO_START.slice(0, 4)) + 1) }, (_, index) => String(Number(snapshot.cutoff.slice(0, 4)) - index)) : [];
   const [mode, setMode] = useState<Mode>('daily');
   const [selected, setSelected] = useState<{ date: string; left: number; right: number; top: number; bottom: number } | null>(null);
   const [game, setGame] = useState(false);
@@ -91,9 +33,9 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
   const tabId = useId();
   const tooltipId = useId();
   const statusText = { ready: '准备好了 · 点击开始', running: '游戏进行中', paused: '已暂停 · 点击继续', over: '游戏结束 · 再试一次', won: '完成整个网格！' }[snake.status];
-  const currentWeek = getWeekUsage(snapshot?.days ?? [], snapshotDate(new Date().toISOString()));
-  const displayed = currentWeek.recordedDays ? currentWeek.tokens : undefined;
-  const values = usage.weeks.flatMap(week => week.dates.filter(date => date <= usage.today).map(date => mode === 'daily' ? (usage.map.get(date)?.tokens || 0) : mode === 'weekly' ? week.tokens : (usage.totals.get(date) || 0)));
+  const currentWeek = getWeekUsage(snapshot?.days ?? [], today || DEMO_START);
+  const displayed = currentWeek.tokens;
+  const values = usage.weeks.flatMap(week => week.dates.filter(date => date < usage.today).map(date => mode === 'daily' ? (usage.map.get(date)?.tokens || 0) : mode === 'weekly' ? week.tokens : (usage.totals.get(date) || 0)));
   const maximum = Math.max(1, ...values);
   const intensity = (tokens: number) => !tokens ? 0 : Math.min(4, Math.max(1, Math.ceil(Math.sqrt(tokens / maximum) * 4)));
   const selectedDay = selected ? usage.map.get(selected.date) : undefined;
@@ -102,34 +44,27 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
   const buttonClass = 'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300';
 
   useEffect(() => {
-    if (!endpoint) return;
-    let cancelled = false;
-    let timedOut = false;
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 10_000);
-    // Defer loading state to the asynchronous request, including in Strict Mode.
-    void Promise.resolve().then(async () => {
-      if (cancelled) return;
-      setRequest(previous => ({ endpoint, snapshot: previous.endpoint === endpoint ? previous.snapshot : null, loading: true, error: null }));
-      try {
-        const response = await fetch(publicApiUrl(endpoint), { signal: controller.signal, credentials: 'omit', mode: 'cors', cache: 'no-store', headers: { Accept: 'application/json' } });
-        if (!response.ok) throw new Error(`接口响应 HTTP ${response.status}`);
-        const next = normalizeUsageResponse(await response.json());
-        if (!cancelled) setRequest({ endpoint, snapshot: next, loading: false, error: null });
-      } catch (error) {
-        if (!cancelled) setRequest(previous => ({ endpoint, snapshot: previous.endpoint === endpoint ? previous.snapshot : null, loading: false, error: timedOut ? '接口请求超时' : error instanceof TypeError ? '接口暂不可用，请检查网络与 CORS 配置' : error instanceof Error ? error.message : '接口暂不可用' }));
-      } finally {
-        window.clearTimeout(timeout);
-      }
-    });
-    return () => { cancelled = true; window.clearTimeout(timeout); controller.abort(); };
-  }, [endpoint, refresh]);
+    let timer: number;
+    const refresh = () => {
+      const now = new Date();
+      const date = shanghaiDate(now);
+      setToday(date);
+      const midnight = Date.parse(`${date}T00:00:00+08:00`) + DAY_MS;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, Math.min(60000, Math.max(50, midnight - now.getTime() + 50)));
+    };
+    const resume = () => { if (!document.hidden) refresh(); };
+    refresh();
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('focus', resume);
+    return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', resume); window.removeEventListener('focus', resume); };
+  }, []);
 
   useEffect(() => {
-    if (!endpoint) return;
-    const timer = window.setInterval(() => { if (!document.hidden) setRefresh(value => value + 1); }, 5 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, [endpoint]);
+    const element = gridRef.current;
+    if (element) element.scrollLeft = element.scrollWidth;
+    setSelected(null);
+  }, [period, today, game]);
 
   useEffect(() => {
     if (!game || snake.status !== 'running') return;
@@ -196,29 +131,24 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
   }
 
   return (
-    <section aria-labelledby={headingId} className="min-w-0 rounded-3xl border border-white/40 bg-white/40 p-5 shadow-xl backdrop-blur-md dark:border-white/10 dark:bg-slate-800/50 sm:p-6">
+    <section data-testid="codex-usage" data-usage-source="demo" data-today={today} aria-labelledby={headingId} className="min-w-0 rounded-3xl border border-white/40 bg-white/40 p-5 shadow-xl backdrop-blur-md dark:border-white/10 dark:bg-slate-800/50 sm:p-6">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-indigo-600 dark:text-cyan-400">CODEX / ACTIVITY</p>
           <h2 id={headingId} className="text-xl font-bold text-slate-900 dark:text-white">把灵感写进每一天</h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">真实 Token 活动记录 · 点击网格，来一局贪吃蛇</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">随机演示 Token 活动 · 点击网格，来一局贪吃蛇</p>
         </div>
         {!game && <button onClick={openGame} className="rounded-xl border border-indigo-400/25 bg-indigo-500/10 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-500/20 focus-visible:outline-2 focus-visible:outline-cyan-400 dark:text-cyan-300">玩贪吃蛇 ↗</button>}
       </div>
 
       <div className="min-w-0 rounded-2xl border border-white/10 bg-[#090f19] p-4 text-slate-200 sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-3 text-[10px] text-slate-500">
-          <div role="status" aria-live="polite"><span className={activeRequest?.error ? 'text-amber-300' : snapshot ? 'text-cyan-300' : 'text-slate-400'}>{requestLabel}</span>{snapshot && <span className="ml-2">更新时间 {snapshotDate(snapshot.updatedAt)} {snapshot.updatedAt.includes('T') ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(snapshot.updatedAt)) : ''}（上海时间）</span>}</div>
-          {!!endpoint && <button className="rounded px-2 py-1 text-cyan-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-cyan-300 disabled:opacity-40" disabled={loading} onClick={() => setRefresh(value => value + 1)}>刷新用量</button>}
-          <p className="w-full text-slate-600">统计已记录的 Token 活动，不表示账户剩余额度。</p>
+          <div role="status" aria-live="polite"><span className="text-cyan-300">随机演示数据 · 非真实账户用量</span>{snapshot && <span className="ml-2">截至 {snapshot.cutoff} · 上海时间</span>}</div>
+          <p className="w-full text-slate-500">每日 3000 万～10 亿 token · 网站自动按日期补齐，今天和未来不计入。</p>
         </div>
-        {!game ? !snapshot ? <div className="flex min-h-[210px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.015] px-5 py-8 text-center" data-usage-state={!endpoint ? 'unconfigured' : loading ? 'loading' : activeRequest?.error ? 'error' : 'empty'}>
-          <p className="text-sm font-medium text-slate-300">{!endpoint ? '用量数据待接入' : loading ? '正在读取真实用量…' : activeRequest?.error ? '暂时无法读取用量' : '暂无用量记录'}</p>
-          <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">{!endpoint ? '接入后，这里将显示每天、每周和累计 Token 活动。' : loading ? '记录加载完成后会自动显示活动网格。' : '接口暂未提供可用记录；可以刷新重试。'}</p>
-          <button onClick={openGame} className="mt-5 rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-medium text-cyan-300 transition hover:bg-cyan-400/20 focus-visible:outline-2 focus-visible:outline-cyan-300">先玩一局贪吃蛇</button>
-        </div> : <>
+        {!game ? !snapshot ? <div className="flex min-h-[210px] items-center justify-center text-sm text-slate-400" data-usage-state="loading">正在生成演示历史…        </div> : <>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-            <div><span className="text-[11px] text-slate-400">本周的用量</span><p className="mt-1 text-2xl font-semibold tracking-tight text-white">{displayed === undefined ? '未记录' : formatTokens(displayed)}</p><p className="mt-1 text-[10px] text-slate-500">{currentWeek.start.slice(5)} 至 {currentWeek.end.slice(5)} · 上海时间 · 已记录 {currentWeek.recordedDays} 天</p></div>
+            <div><span className="text-[11px] text-slate-400">本周演示用量</span><p className="mt-1 text-2xl font-semibold tracking-tight text-white">{formatTokens(displayed)}</p><p className="mt-1 text-[10px] text-slate-500">{currentWeek.start.slice(5)} 至 {currentWeek.end.slice(5)} · 上海时间 · 已生成 {currentWeek.recordedDays} 天</p></div>
             <div className="flex rounded-lg border border-white/10 bg-white/[0.03] p-1" role="tablist" aria-label="Codex 用量统计周期">
               {([['daily', '每天'], ['weekly', '每周'], ['total', '累计总量']] as const).map(([value, label]) => <button key={value} id={`${tabId}-${value}`} role="tab" aria-selected={mode === value} aria-controls={`${tabId}-panel`} tabIndex={mode === value ? 0 : -1} onKeyDown={event => {
                 if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -232,10 +162,14 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
             </div>
           </div>
 
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
+            <span>历史范围 {DEMO_START} 至 {usage.cutoff} · 共 {snapshot.days.length.toLocaleString('zh-CN')} 天 · 累计 {formatTokens(usage.total)}</span>
+            <label className="flex items-center gap-2">展示范围<select aria-label="用量展示范围" value={period} onChange={event => setPeriod(event.target.value)} className="rounded border border-white/15 bg-[#111b27] px-2 py-1 text-slate-200 focus-visible:outline-2 focus-visible:outline-cyan-300"><option value="all">全部历史</option>{years.map(year => <option key={year} value={year}>{year} 年</option>)}</select></label>
+          </div>
           <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${mode}`}>
-            <div className="max-w-full overflow-x-auto pb-3" aria-label="过去 53 周用量网格，可横向滚动" tabIndex={0}>
-              <div style={{ width: 24 + 53 * CELL_SIZE + 52 * CELL_GAP }}>
-                <div className="mb-2 grid pl-6 text-[10px] text-slate-500" style={{ gridTemplateColumns: GRID_COLUMNS, gap: CELL_GAP }}>{usage.weeks.map((week, index) => {
+            <div ref={gridRef} data-testid="usage-grid" className="max-w-full overflow-x-auto pb-3" aria-label="历史演示用量网格，可横向滚动查看全部日期" tabIndex={0}>
+              <div style={{ width: 24 + columns * CELL_SIZE + (columns - 1) * CELL_GAP }}>
+                <div className="mb-2 grid pl-6 text-[10px] text-slate-500" style={{ gridTemplateColumns: gridColumns, gap: CELL_GAP }}>{usage.weeks.map((week, index) => {
                   const date = week.dates[0];
                   const previous = usage.weeks[index - 1]?.dates[0];
                   const label = index === 0 || date.slice(0, 7) !== previous?.slice(0, 7) ? `${Number(date.slice(5, 7))}月` : '';
@@ -243,22 +177,22 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
                 })}</div>
                 <div className="flex gap-2">
                   <div className="grid w-4 shrink-0 text-[9px] text-slate-600" style={{ gridTemplateRows: `repeat(7, ${CELL_SIZE}px)`, gap: CELL_GAP }} aria-hidden="true">{['一', '', '三', '', '五', '', '日'].map((label, index) => <span key={index} className="flex items-center">{label}</span>)}</div>
-                  <div className="grid" style={{ gridTemplateColumns: GRID_COLUMNS, gap: CELL_GAP }}>
+                  <div className="grid" style={{ gridTemplateColumns: gridColumns, gap: CELL_GAP }}>
                     {usage.weeks.map(week => <div key={week.dates[0]} className="grid" style={{ gridTemplateRows: `repeat(7, ${CELL_SIZE}px)`, gap: CELL_GAP }}>{week.dates.map(date => {
-                      const future = date > usage.today;
+                      const future = date >= usage.today || date < DEMO_START || date < usage.first || date > usage.last;
                       const day = usage.map.get(date);
                       const recorded = mode === 'daily' ? !!day : mode === 'weekly' ? week.count > 0 : usage.map.size > 0 && (usage.totals.get(date) || 0) > 0;
                       const tokens = mode === 'daily' ? (day?.tokens || 0) : mode === 'weekly' ? week.tokens : (usage.totals.get(date) || 0);
                       const label = `${date}，${recorded ? formatTokens(tokens) : '未记录'}；点击玩贪吃蛇`;
                       if (future) return <span key={date} className="rounded-[3px] bg-white/[0.02]" style={{ width: CELL_SIZE, height: CELL_SIZE }} aria-hidden="true" />;
-                      return <button key={date} type="button" aria-label={label} aria-describedby={selected?.date === date ? tooltipId : undefined} onMouseEnter={event => showUsage(date, event.currentTarget)} onMouseLeave={() => setSelected(null)} onFocus={event => showUsage(date, event.currentTarget)} onBlur={() => setSelected(null)} onClick={openGame} className="rounded-[3px] transition hover:outline hover:outline-1 hover:outline-cyan-200 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-white" style={{ width: CELL_SIZE, height: CELL_SIZE, padding: 0, minWidth: 0, backgroundColor: recorded ? colors[intensity(tokens)] : '#111b27', boxShadow: recorded ? undefined : 'inset 0 0 0 1px #253040' }} />;
+                      return <button key={date} type="button" data-usage-date={date} data-tokens={tokens} aria-label={label} aria-describedby={selected?.date === date ? tooltipId : undefined} onMouseEnter={event => showUsage(date, event.currentTarget)} onMouseLeave={() => setSelected(null)} onFocus={event => showUsage(date, event.currentTarget)} onBlur={() => setSelected(null)} onClick={openGame} className="rounded-[3px] transition hover:outline hover:outline-1 hover:outline-cyan-200 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-white" style={{ width: CELL_SIZE, height: CELL_SIZE, padding: 0, minWidth: 0, backgroundColor: recorded ? colors[intensity(tokens)] : '#111b27', boxShadow: recorded ? undefined : 'inset 0 0 0 1px #253040' }} />;
                     })}</div>)}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500"><span>{mode === 'daily' ? '每格一天 · 总 tokens（含缓存输入）' : mode === 'weekly' ? '每列一周 · 全列显示该周已记录合计' : '每格显示截至该日的已记录累计用量'}</span><div className="flex items-center gap-1.5"><span>少</span>{colors.map(color => <span key={color} className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />)}<span>多</span><span className="ml-2 h-2.5 w-2.5 rounded-[2px] border border-slate-700 bg-[#111b27]" /><span>未记录</span></div></div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500"><span>{mode === 'daily' ? '每格一天 · 随机演示 tokens' : mode === 'weekly' ? '每列一周 · 该周已结束日期的演示合计' : '每格显示截至该日的全部演示累计用量'}</span><div className="flex items-center gap-1.5"><span>少</span>{colors.map(color => <span key={color} className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />)}<span>多</span><span className="ml-2 h-2.5 w-2.5 rounded-[2px] border border-slate-700 bg-[#111b27]" /><span>未记录</span></div></div>
             {selected && createPortal(
               <div id={tooltipId} role="tooltip" ref={element => {
                 if (!element) return;
@@ -269,7 +203,7 @@ export default function CodexUsage({ apiUrl }: { apiUrl?: string } = {}) {
                 element.style.left = `${left}px`;
                 element.style.top = `${Math.max(8, top)}px`;
               }} className="pointer-events-none fixed z-[100] w-max max-w-[calc(100vw-16px)] rounded-xl border border-white/15 bg-[#24272d] px-3 py-2 text-sm leading-snug text-white shadow-xl">
-                <p className="font-medium">{mode === 'weekly' && selectedWeek ? `${selectedWeek.dates[0]} 至 ${selectedWeek.dates[6] > usage.today ? usage.today : selectedWeek.dates[6]}` : `${selected.date} ${mode === 'total' ? '累计' : ''}`}</p>
+                <p className="font-medium">{mode === 'weekly' && selectedWeek ? `${selectedWeek.dates[0]} 至 ${selectedWeek.dates[6] > usage.cutoff ? usage.cutoff : selectedWeek.dates[6]}` : `${selected.date} ${mode === 'total' ? '累计' : ''}`}</p>
                 <p className="mt-0.5 text-cyan-200">{mode === 'weekly' ? selectedWeek?.count ? formatTokens(selectedWeek.tokens) : '未记录' : mode === 'total' ? formatTokens(usage.totals.get(selected.date) || 0) : selectedDay ? formatTokens(selectedDay.tokens) : '未记录'}</p>
               </div>, document.body,
             )}
