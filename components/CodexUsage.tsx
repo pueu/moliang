@@ -136,19 +136,19 @@ export default function CodexUsage() {
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-indigo-600 dark:text-cyan-400">CODEX / ACTIVITY</p>
           <h2 id={headingId} className="text-xl font-bold text-slate-900 dark:text-white">把灵感写进每一天</h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">随机演示 Token 活动 · 点击网格，来一局贪吃蛇</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Codex 用量 · 点击网格，来一局贪吃蛇</p>
         </div>
         {!game && <button onClick={openGame} className="rounded-xl border border-indigo-400/25 bg-indigo-500/10 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-500/20 focus-visible:outline-2 focus-visible:outline-cyan-400 dark:text-cyan-300">玩贪吃蛇 ↗</button>}
       </div>
 
       <div className="min-w-0 rounded-2xl border border-white/10 bg-[#090f19] p-4 text-slate-200 sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-3 text-[10px] text-slate-500">
-          <div role="status" aria-live="polite"><span className="text-cyan-300">随机演示数据 · 非真实账户用量</span>{snapshot && <span className="ml-2">截至 {snapshot.cutoff} · 上海时间</span>}</div>
-          <p className="w-full text-slate-500">每日 3000 万～10 亿 token · 网站自动按日期补齐，今天和未来不计入。</p>
+          <div role="status" aria-live="polite"><span className="text-cyan-300">Codex 用量</span>{snapshot && <span className="ml-2">截至 {snapshot.cutoff} · 上海时间</span>}</div>
+          <p className="w-full text-slate-500">按上海时间统计至昨天，今天和未来不计入。</p>
         </div>
-        {!game ? !snapshot ? <div className="flex min-h-[210px] items-center justify-center text-sm text-slate-400" data-usage-state="loading">正在生成演示历史…        </div> : <>
+        {!game ? !snapshot ? <div className="flex min-h-[210px] items-center justify-center text-sm text-slate-400" data-usage-state="loading">正在加载用量记录…        </div> : <>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-            <div><span className="text-[11px] text-slate-400">本周演示用量</span><p className="mt-1 text-2xl font-semibold tracking-tight text-white">{formatTokens(displayed)}</p><p className="mt-1 text-[10px] text-slate-500">{currentWeek.start.slice(5)} 至 {currentWeek.end.slice(5)} · 上海时间 · 已生成 {currentWeek.recordedDays} 天</p></div>
+            <div><span className="text-[11px] text-slate-400">本周用量</span><p className="mt-1 text-2xl font-semibold tracking-tight text-white">{formatTokens(displayed)}</p><p className="mt-1 text-[10px] text-slate-500">{currentWeek.start.slice(5)} 至 {currentWeek.end.slice(5)} · 上海时间 · 已记录 {currentWeek.recordedDays} 天</p></div>
             <div className="flex rounded-lg border border-white/10 bg-white/[0.03] p-1" role="tablist" aria-label="Codex 用量统计周期">
               {([['daily', '每天'], ['weekly', '每周'], ['total', '累计总量']] as const).map(([value, label]) => <button key={value} id={`${tabId}-${value}`} role="tab" aria-selected={mode === value} aria-controls={`${tabId}-panel`} tabIndex={mode === value ? 0 : -1} onKeyDown={event => {
                 if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -167,7 +167,7 @@ export default function CodexUsage() {
             <label className="flex items-center gap-2">展示范围<select aria-label="用量展示范围" value={period} onChange={event => setPeriod(event.target.value)} className="rounded border border-white/15 bg-[#111b27] px-2 py-1 text-slate-200 focus-visible:outline-2 focus-visible:outline-cyan-300"><option value="all">全部历史</option>{years.map(year => <option key={year} value={year}>{year} 年</option>)}</select></label>
           </div>
           <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${mode}`}>
-            <div ref={gridRef} data-testid="usage-grid" className="max-w-full overflow-x-auto pb-3" aria-label="历史演示用量网格，可横向滚动查看全部日期" tabIndex={0}>
+            <div ref={gridRef} data-testid="usage-grid" className="max-w-full overflow-x-auto pb-3" aria-label="历史 Codex 用量网格，可横向滚动查看全部日期" tabIndex={0}>
               <div style={{ width: 24 + columns * CELL_SIZE + (columns - 1) * CELL_GAP }}>
                 <div className="mb-2 grid pl-6 text-[10px] text-slate-500" style={{ gridTemplateColumns: gridColumns, gap: CELL_GAP }}>{usage.weeks.map((week, index) => {
                   const date = week.dates[0];
@@ -192,7 +192,7 @@ export default function CodexUsage() {
               </div>
             </div>
 
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500"><span>{mode === 'daily' ? '每格一天 · 随机演示 tokens' : mode === 'weekly' ? '每列一周 · 该周已结束日期的演示合计' : '每格显示截至该日的全部演示累计用量'}</span><div className="flex items-center gap-1.5"><span>少</span>{colors.map(color => <span key={color} className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />)}<span>多</span><span className="ml-2 h-2.5 w-2.5 rounded-[2px] border border-slate-700 bg-[#111b27]" /><span>未记录</span></div></div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500"><span>{mode === 'daily' ? '每格一天 · Codex 用量' : mode === 'weekly' ? '每列一周 · 该周已结束日期的用量合计' : '每格显示截至该日的全部累计用量'}</span><div className="flex items-center gap-1.5"><span>少</span>{colors.map(color => <span key={color} className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />)}<span>多</span><span className="ml-2 h-2.5 w-2.5 rounded-[2px] border border-slate-700 bg-[#111b27]" /><span>未记录</span></div></div>
             {selected && createPortal(
               <div id={tooltipId} role="tooltip" ref={element => {
                 if (!element) return;

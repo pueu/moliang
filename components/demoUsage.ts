@@ -1,5 +1,5 @@
 /** Decorative, deterministic demo data. No account or usage API is consulted. */
-export const DEMO_START = '2020-01-01';
+export const DEMO_START = '2026-06-05';
 export const DEMO_MIN = 30_000_000;
 export const DEMO_MAX = 1_000_000_000;
 const DAY_MS = 86_400_000;
@@ -52,7 +52,7 @@ export function buildDemoView(snapshot: DemoUsageSnapshot | null, period = 'all'
   const today = snapshot?.today || '';
   const cutoff = snapshot?.cutoff || '';
   const year = /^\d{4}$/.test(period) ? period : null;
-  const first = year ? `${year}-01-01` : DEMO_START;
+  const first = year && `${year}-01-01` > DEMO_START ? `${year}-01-01` : DEMO_START;
   const last = year && `${year}-12-31` < cutoff ? `${year}-12-31` : cutoff;
   const firstTime = dayTime(first);
   const start = firstTime - ((new Date(firstTime).getUTCDay() + 6) % 7) * DAY_MS;

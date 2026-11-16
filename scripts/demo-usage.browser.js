@@ -23,10 +23,10 @@ async page => {
     await p.getByTestId('usage-grid').waitFor();
     const read = () => panel.locator('[data-usage-date]').evaluateAll(cells => cells.map(cell => ({ date: cell.dataset.usageDate, tokens: Number(cell.dataset.tokens) })));
     const first = await read();
-    assert(first[0].date === '2020-01-01' && first.at(-1).date === '2026-11-14', 'full history ends yesterday');
+    assert(first[0].date === '2026-06-05' && first.at(-1).date === '2026-11-14', 'full history ends yesterday');
     assert(first.every(day => day.date < '2026-11-15' && day.tokens >= 30000000 && day.tokens <= 1000000000), 'date and value bounds');
     assert(await panel.getAttribute('data-usage-source') === 'demo', 'demo source labelled');
-    assert((await panel.innerText()).includes('非真实账户用量'), 'visible disclosure');
+    assert((await panel.innerText()).includes('Codex 用量') && !/演示|随机|非真实/.test(await panel.innerText()), 'requested usage labels');
     assert(await p.getByTestId('usage-grid').evaluate(el => el.scrollLeft + el.clientWidth >= el.scrollWidth - 2), 'history starts scrolled to latest');
     await p.reload();
     await p.getByTestId('usage-grid').waitFor();
@@ -37,15 +37,15 @@ async page => {
     await p.getByRole('tooltip').waitFor();
     assert((await p.getByRole('tooltip').innerText()).includes('2026-11-14'), 'tooltip date');
     await p.keyboard.press('Escape');
-    await p.getByRole('combobox', { name: '用量展示范围' }).selectOption('2020');
+    await p.getByRole('combobox', { name: '用量展示范围' }).selectOption('2026');
     const year = await read();
-    assert(year.length === 366 && year.every(day => day.date.startsWith('2020-')), 'leap year selectable');
+    assert(year.length === first.length && year[0].date === '2026-06-05', 'first year starts on June 5');
     await p.getByRole('tab', { name: '累计总量', exact: true }).click();
     const cumulative = await read();
-    assert(cumulative.at(-1).tokens === first.filter(day => day.date <= '2020-12-31').reduce((sum, day) => sum + day.tokens, 0), 'lifetime cumulative totals');
+    assert(cumulative.at(-1).tokens === first.filter(day => day.date <= '2026-12-31').reduce((sum, day) => sum + day.tokens, 0), 'lifetime cumulative totals');
     await p.getByRole('combobox', { name: '用量展示范围' }).selectOption('all');
     await p.getByRole('tab', { name: '每天', exact: true }).click();
-    results.push('hover tooltip, year filter, leap year, cumulative view: passed');
+    results.push('hover tooltip, year filter, June 5 start, cumulative view: passed');
 
     for (const [instant, today, cutoff] of [
       ['2026-11-15T16:00:00Z', '2026-11-16', '2026-11-15'],

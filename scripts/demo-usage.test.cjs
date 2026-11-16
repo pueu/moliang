@@ -23,7 +23,7 @@ test('every day has one integer between 30 million and 1 billion, ending yesterd
     assert.ok(Number.isInteger(day.tokens) && day.tokens >= DEMO_MIN && day.tokens <= DEMO_MAX);
     assert.ok(day.date < data.today);
   }
-  assert.ok(new Set(data.days.map(day => day.tokens)).size > 2000);
+  assert.ok(new Set(data.days.map(day => day.tokens)).size === data.days.length);
 });
 test('Shanghai midnight reveals exactly one additional completed day', () => {
   const before = shanghaiDate(new Date('2026-11-14T15:59:59.999Z'));
@@ -37,14 +37,14 @@ test('Shanghai midnight reveals exactly one additional completed day', () => {
   assert.equal(JSON.stringify(a.days), JSON.stringify(b.days.slice(0, -1)));
 });
 test('month and year changes extend history without rerolling any earlier dates', () => {
-  for (const [before, after] of [['2026-11-30', '2026-12-01'], ['2026-12-31', '2027-01-01'], ['2024-02-29', '2024-03-01']]) {
+  for (const [before, after] of [['2026-11-30', '2026-12-01'], ['2026-12-31', '2027-01-01'], ['2028-02-29', '2028-03-01']]) {
     const a = generateDemoUsage(before), b = generateDemoUsage(after);
     assert.equal(b.days.length, a.days.length + 1);
     assert.equal(JSON.stringify(a.days), JSON.stringify(b.days.slice(0, -1)));
     assert.equal(JSON.stringify(generateDemoUsage(after)), JSON.stringify(b));
   }
-  assert.ok(generateDemoUsage('2024-03-01').days.some(day => day.date === '2024-02-29'));
-  assert.equal(demoTokens('2020-01-01'), generateDemoUsage('2035-01-01').days[0].tokens);
+  assert.ok(generateDemoUsage('2028-03-01').days.some(day => day.date === '2028-02-29'));
+  assert.equal(demoTokens(DEMO_START), generateDemoUsage('2035-01-01').days[0].tokens);
 });
 test('view rejects today and future records and includes all prior years', () => {
   const data = generateDemoUsage('2026-11-15');
@@ -52,24 +52,28 @@ test('view rejects today and future records and includes all prior years', () =>
   const view = buildDemoView(data);
   assert.equal(view.map.has('2026-11-15'), false);
   assert.equal(view.map.has('2027-01-01'), false);
-  assert.equal(view.first, '2020-01-01');
-  assert.ok(view.weeks.length > 300);
+  assert.equal(view.first, '2026-06-05');
+  assert.ok(view.weeks.length >= 24);
   assert.equal(view.total, data.days.filter(day => day.date < data.today).reduce((sum, day) => sum + day.tokens, 0));
 });
 test('year filtering keeps lifetime cumulative totals and Monday starts with zero completed days', () => {
-  const data = generateDemoUsage('2026-11-16');
-  const year = buildDemoView(data, '2021');
-  assert.equal(year.first, '2021-01-01');
-  assert.equal(year.last, '2021-12-31');
-  assert.equal(year.totals.get('2021-01-02'), data.days.filter(day => day.date <= '2021-01-02').reduce((sum, day) => sum + day.tokens, 0));
-  const monday = getWeekUsage(data.days, data.today);
+  const data = generateDemoUsage('2027-01-10');
+  const year = buildDemoView(data, '2027');
+  assert.equal(year.first, '2027-01-01');
+  assert.equal(year.last, '2027-01-09');
+  assert.equal(year.totals.get('2027-01-02'), data.days.filter(day => day.date <= '2027-01-02').reduce((sum, day) => sum + day.tokens, 0));
+  const monday = getWeekUsage(data.days.filter(day => day.date < '2026-11-16'), '2026-11-16');
   assert.equal(monday.start, '2026-11-16');
   assert.equal(monday.tokens, 0);
   assert.equal(monday.recordedDays, 0);
 });
 test('invalid dates fail clearly; dates before history starts have no records', () => {
   for (const date of ['2026-02-30', '2026-13-01', 'not-a-date']) assert.throws(() => generateDemoUsage(date), /Invalid calendar date/);
-  assert.equal(generateDemoUsage('2019-12-31').days.length, 0);
+  assert.equal(generateDemoUsage('2026-06-04').days.length, 0);
   assert.equal(generateDemoUsage(DEMO_START).days.length, 0);
   assert.equal(buildDemoView(null).weeks.length, 0);
+  assert.equal(buildDemoView(generateDemoUsage('2026-11-16'), '2026').first, DEMO_START);
+  const firstDay = generateDemoUsage('2026-06-06');
+  assert.equal(firstDay.days.length, 1);
+  assert.equal(firstDay.days[0].date, '2026-06-05');
 });
